@@ -2,7 +2,7 @@
 
 A small head-to-head benchmark suite comparing **C**, **C++**, **Jai**,
 **JavaScript** (Node.js), **Odin**, **Rust** and **Zig** on runtime speed, peak
-memory, binary size and compile time. The same seven workloads are implemented in
+memory, binary size, compile time and source size. The same seven workloads are implemented in
 each language; a build script compiles the six native suites (and launches the
 JavaScript suite under Node), runs every benchmark under `/usr/bin/time`, and
 prints a side-by-side table.
@@ -76,7 +76,8 @@ CC=/path/to/cc CXX=/path/to/c++ JAI=/path/to/jai ODIN=/path/to/odin RUSTC=/path/
 ```
 
 Output reports, per benchmark, the best-of-N wall time and peak resident memory
-for each language and who won, plus binary size and compile time.
+for each language and who won, plus binary size, compile time and source lines
+of code.
 
 ## Results
 
@@ -121,6 +122,11 @@ better).
 | ------------ | ------- | ------- | ------------- | --------- | ------ | ------ | ------ |
 | binary size  | 0.03 MB | 0.04 MB | 4.6 MB        | n/a       | 0.2 MB | 0.4 MB | 0.4 MB |
 | compile time | 0.10 s  | 0.42 s  | 9.70 s        | n/a       | 1.20 s | 0.24 s | 5.57 s |
+| code SLOC    | 338     | 326     | 318           | 321       | 323    | 354    | 348    |
+
+`code SLOC` counts non-blank, non-comment source lines (all seven suites
+implement the identical seven benchmarks, so this is a fair conciseness
+comparison). Lower is more concise.
 
 JavaScript is JIT-compiled by Node at run time, so it has no ahead-of-time
 binary or compile step.
@@ -153,6 +159,11 @@ binary or compile step.
   for `<iostream>`/`<vector>` template instantiation (~0.4 s). OpenJai is now the
   slowest to build (~9.7 s, up sharply once the `raster` math was added),
   followed by Zig's full `ReleaseFast` LLVM pipeline (~5.6 s).
+- **Jai is the most concise** at 318 SLOC, just ahead of JavaScript (321) and
+  Odin (323); **Rust is the most verbose** (354), with Zig close behind (348).
+  The gap is mostly bookkeeping: Rust spells out `let mut` and `.wrapping_*()`,
+  and Zig needs explicit `@intCast`/`@floatFromInt` casts, while
+  Jai, Odin and JS lean on terser implicit conversions and wrapping arithmetic.
 - **JavaScript (Node V8) is more competitive than expected** on the hot numeric
   loops — `matmul`, `sieve` and `mandelbrot` land within a few× of native — but
   pays heavily on the branchy/recursive workloads (`collatz` and `fib`, both

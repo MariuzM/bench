@@ -66,6 +66,26 @@ run_bench() {
 
 human_mb() { awk -v b="$1" 'BEGIN { printf "%.1f", b / 1048576 }'; }
 
+# Map a language to its single source file.
+src_of() {
+  case "$1" in
+    c) echo "$ROOT/main.c" ;;
+    cpp) echo "$ROOT/main.cpp" ;;
+    jai) echo "$ROOT/main.jai" ;;
+    js) echo "$ROOT/main.js" ;;
+    odin) echo "$ROOT/main.odin" ;;
+    rust) echo "$ROOT/main.rs" ;;
+    zig) echo "$ROOT/main.zig" ;;
+  esac
+}
+
+# Source lines of code: non-blank lines that aren't pure `//` comments. All
+# seven suites use `//` line comments and no block comments, so this is a fair
+# conciseness measure across languages.
+sloc_of() {
+  grep -vE '^[[:space:]]*//' "$1" | grep -vcE '^[[:space:]]*$'
+}
+
 # Echo the language with the smallest value for benchmark $2, reading from the
 # variables named "$1_<lang>_<bench>" (e.g. T_zig_fib).
 min_lang() {
@@ -194,5 +214,9 @@ printf "\n"
 printf "%-12s" "compile s"
 for l in "${LANGS[@]}"; do vname="BUILD_$l"; printf " | %8s" "${!vname}"; done
 printf "\n"
+printf "%-12s" "code SLOC"
+for l in "${LANGS[@]}"; do printf " | %8s" "$(sloc_of "$(src_of "$l")")"; done
+printf "\n"
 echo "=============================================================================="
 echo "time = best of $RUNS runs (lower better); peak MB = max resident set size."
+echo "code SLOC = non-blank, non-comment source lines (lower = more concise)."
