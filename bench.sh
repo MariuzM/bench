@@ -1,19 +1,25 @@
 #!/usr/bin/env bash
 #
-# Builds the Zig and Jai benchmark suites, runs each benchmark under
-# /usr/bin/time, and prints a side-by-side comparison of wall-clock time,
-# peak memory (RSS) and binary size. Each benchmark prints a "checksum" line;
-# the script verifies Zig and Jai agree on it before trusting the numbers.
+# Builds the Zig, Jai, Rust and Odin benchmark suites, runs each benchmark under
+# /usr/bin/time, and prints a side-by-side comparison of wall-clock time, peak
+# memory (RSS), binary size and compile time. Each benchmark prints a "checksum"
+# line; the script verifies every language agrees on it before trusting the
+# numbers.
 #
-# Env overrides: ZIG, JAI (compiler paths), RUNS (timed repeats per benchmark).
+# Env overrides: ZIG, JAI, RUSTC, ODIN (compiler paths), RUNS (timed repeats).
+# Written for bash 3.2 (macOS default), so it uses indirect variable references
+# instead of associative arrays.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 ZIG="${ZIG:-/Users/marius/Dev/zig-0.16.0/zig}"
 JAI="${JAI:-/Users/marius/Dev/jai/bin/jai}"
+RUSTC="${RUSTC:-rustc}"
+ODIN="${ODIN:-/Users/marius/Dev/odin-dev-2024-04a/odin}"
 RUNS="${RUNS:-3}"
 BENCHMARKS=(fib mandelbrot matmul sieve sort)
+LANGS=(jai odin rust zig)
 
 BIN="$ROOT/bin"
 mkdir -p "$BIN"
@@ -24,9 +30,7 @@ trap 'rm -rf "$TMP" "$BIN" "$ROOT/build"' EXIT
 # --- helpers ---------------------------------------------------------------
 
 # Run "$@" under /usr/bin/time -l, echo "real_seconds rss_bytes". The program's
-# own output (checksum) is discarded here; we only want the timing stats. Zig
-# prints to stderr and Jai to stdout, so both are funneled away and we grep the
-# time stats out of the combined stream by their unique labels.
+# own output (checksum) is discarded here; we only want the timing stats.
 time_once() {
   /usr/bin/time -l "$@" >/dev/null 2>"$TMP/t"
   local real rss
@@ -53,58 +57,101 @@ run_bench() {
 
 human_mb() { awk -v b="$1" 'BEGIN { printf "%.1f", b / 1048576 }'; }
 
+# Echo the language with the smallest value for benchmark $2, reading from the
+# variables named "$1_<lang>_<bench>" (e.g. T_zig_fib).
+min_lang() {
+  local prefix=$1 bench=$2 best="" bestv="" l vname v
+  for l in "${LANGS[@]}"; do
+    vname="${prefix}_${l}_${bench}"
+    v=${!vname}
+    if [ -z "$bestv" ] || awk -v a="$v" -v b="$bestv" 'BEGIN{exit !(a<b)}'; then
+      bestv=$v
+      best=$l
+    fi
+  done
+  echo "$best"
+}
+
 # --- build -----------------------------------------------------------------
 
-echo "Building (Zig ReleaseFast / Jai release)..."
+echo "Building (Zig ReleaseFast / Jai release / Rust -O / Odin -o:speed)..."
 
-zig_build_real=$(/usr/bin/time -p "$ZIG" build-exe "$ROOT/main.zig" -O ReleaseFast \
-  -femit-bin="$BIN/zig_bench" 2>&1 | awk '/real/ {print $2; exit}')
+BINOF_zig="$BIN/zig_bench"
+BUILD_zig=$(/usr/bin/time -p "$ZIG" build-exe "$ROOT/main.zig" -O ReleaseFast \
+  -femit-bin="$BINOF_zig" 2>&1 | awk '/real/ {print $2; exit}')
 
 # Jai's default metaprogram always emits ./build/main and ignores output-path
 # flags, so build there and copy the result into bin/.
-( cd "$ROOT" && jai_build_real=$(/usr/bin/time -p "$JAI" main.jai -release -quiet \
-    >/dev/null 2>"$TMP/jb"; awk '/real/ {print $2; exit}' "$TMP/jb"); \
-  echo "$jai_build_real" >"$TMP/jbt" )
-jai_build_real=$(cat "$TMP/jbt")
-cp "$ROOT/build/main" "$BIN/jai_bench"
+( cd "$ROOT" && /usr/bin/time -p "$JAI" main.jai -release -quiet >/dev/null 2>"$TMP/jb"
+  awk '/real/ {print $2; exit}' "$TMP/jb" >"$TMP/jbt" )
+BUILD_jai=$(cat "$TMP/jbt")
+BINOF_jai="$BIN/jai_bench"
+cp "$ROOT/build/main" "$BINOF_jai"
 
-ZBIN="$BIN/zig_bench"
-JBIN="$BIN/jai_bench"
-zig_size=$(stat -f%z "$ZBIN")
-jai_size=$(stat -f%z "$JBIN")
+BINOF_rust="$BIN/rust_bench"
+BUILD_rust=$(/usr/bin/time -p "$RUSTC" -O "$ROOT/main.rs" \
+  -o "$BINOF_rust" 2>&1 | awk '/real/ {print $2; exit}')
+
+BINOF_odin="$BIN/odin_bench"
+BUILD_odin=$(cd "$TMP" && /usr/bin/time -p "$ODIN" build "$ROOT/main.odin" -file \
+  -o:speed -out:"$BINOF_odin" 2>&1 | awk '/real/ {print $2; exit}')
+
+for l in "${LANGS[@]}"; do
+  bvar="BINOF_$l"
+  eval "SIZE_$l=\$(stat -f%z \"\${$bvar}\")"
+done
 
 # --- measure ---------------------------------------------------------------
 
-ZT=(); ZM=(); JT=(); JM=()
 echo "Running each benchmark ${RUNS}x (best wall-time, peak RSS)..."
-for i in "${!BENCHMARKS[@]}"; do
-  b=${BENCHMARKS[$i]}
+for b in "${BENCHMARKS[@]}"; do
   printf "  %-12s" "$b"
-  read -r zt zm zck <<<"$(run_bench "$ZBIN" "$b")"
-  read -r jt jm jck <<<"$(run_bench "$JBIN" "$b")"
-  ZT[$i]=$zt; ZM[$i]=$zm; JT[$i]=$jt; JM[$i]=$jm
-  if [ "$zck" = "$jck" ]; then printf " checksum ok (%s)\n" "$zck"; \
-  else printf " CHECKSUM MISMATCH zig=%s jai=%s\n" "$zck" "$jck"; fi
+  ck0=""; ok=1
+  for l in "${LANGS[@]}"; do
+    bvar="BINOF_$l"
+    read -r t m c <<<"$(run_bench "${!bvar}" "$b")"
+    eval "T_${l}_${b}=$t"
+    eval "M_${l}_${b}=$m"
+    [ -z "$ck0" ] && ck0=$c
+    [ "$c" != "$ck0" ] && ok=0
+  done
+  if [ "$ok" = 1 ]; then printf " checksum ok (%s)\n" "$ck0"
+  else printf " CHECKSUM MISMATCH\n"; fi
 done
 
 # --- report ----------------------------------------------------------------
 
 echo
-echo "================================ RESULTS ================================="
-printf "%-12s | %-19s | %-19s | %s\n" "benchmark" "time (s)  zig / jai" "peak MB   zig / jai" "winner"
-echo "-------------------------------------------------------------------------"
-for i in "${!BENCHMARKS[@]}"; do
-  b=${BENCHMARKS[$i]}
-  zt=${ZT[$i]}; jt=${JT[$i]}; zm=${ZM[$i]}; jm=${JM[$i]}
-  zmb=$(human_mb "$zm"); jmb=$(human_mb "$jm")
-  tline=$(awk -v z="$zt" -v j="$jt" 'BEGIN{
-    if (z<j){ printf "zig %.2fx", j/z } else if (j<z){ printf "jai %.2fx", z/j } else printf "tie" }')
-  mwin=$(awk -v z="$zm" -v j="$jm" 'BEGIN{ print (z<j)?"zig":((j<z)?"jai":"tie") }')
-  printf "%-12s | %8s / %-8s | %8s / %-8s | t:%-9s m:%s\n" \
-    "$b" "$zt" "$jt" "$zmb" "$jmb" "$tline" "$mwin"
+echo "================================== TIME (s) =================================="
+printf "%-12s" "benchmark"
+for l in "${LANGS[@]}"; do printf " | %8s" "$l"; done
+printf " | %s\n" "fastest"
+echo "------------------------------------------------------------------------------"
+for b in "${BENCHMARKS[@]}"; do
+  printf "%-12s" "$b"
+  for l in "${LANGS[@]}"; do vname="T_${l}_${b}"; printf " | %8s" "${!vname}"; done
+  printf " | %s\n" "$(min_lang T "$b")"
 done
-echo "-------------------------------------------------------------------------"
-printf "%-12s | zig %-15s | jai %s\n" "binary size" "$(human_mb "$zig_size") MB" "$(human_mb "$jai_size") MB"
-printf "%-12s | zig %-15s | jai %s\n" "compile" "${zig_build_real}s" "${jai_build_real}s"
-echo "========================================================================="
+
+echo
+echo "================================= PEAK (MB) =================================="
+printf "%-12s" "benchmark"
+for l in "${LANGS[@]}"; do printf " | %8s" "$l"; done
+printf " | %s\n" "leanest"
+echo "------------------------------------------------------------------------------"
+for b in "${BENCHMARKS[@]}"; do
+  printf "%-12s" "$b"
+  for l in "${LANGS[@]}"; do vname="M_${l}_${b}"; printf " | %8s" "$(human_mb "${!vname}")"; done
+  printf " | %s\n" "$(min_lang M "$b")"
+done
+
+echo
+echo "============================ BINARY SIZE / COMPILE ==========================="
+printf "%-12s" "binary MB"
+for l in "${LANGS[@]}"; do vname="SIZE_$l"; printf " | %8s" "$(human_mb "${!vname}")"; done
+printf "\n"
+printf "%-12s" "compile s"
+for l in "${LANGS[@]}"; do vname="BUILD_$l"; printf " | %8s" "${!vname}"; done
+printf "\n"
+echo "=============================================================================="
 echo "time = best of $RUNS runs (lower better); peak MB = max resident set size."

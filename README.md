@@ -1,9 +1,10 @@
-# Zig vs Jai benchmarks
+# Jai vs Odin vs Rust vs Zig benchmarks
 
-A small head-to-head benchmark suite comparing **Zig** and **Jai** on runtime
-speed, peak memory, binary size and compile time. The same five workloads are
-implemented in each language; a build script compiles both, runs every
-benchmark under `/usr/bin/time`, and prints a side-by-side table.
+A small head-to-head benchmark suite comparing **Jai**, **Odin**, **Rust** and
+**Zig** on runtime speed, peak memory, binary size and compile time. The same
+five workloads are implemented in each language; a build script compiles all
+four, runs every benchmark under `/usr/bin/time`, and prints a side-by-side
+table.
 
 > ⚠️ **This is not the official Jai compiler.** The Jai side is built with
 > **OpenJai**, an MIT-licensed clean-room Jai-compatible compiler — *not*
@@ -16,9 +17,11 @@ benchmark under `/usr/bin/time`, and prints a side-by-side table.
 
 | File         | What it is                                                        |
 | ------------ | ----------------------------------------------------------------- |
-| `main.zig`   | All five benchmarks; runs one, chosen by a command-line argument. |
-| `main.jai`   | The same five benchmarks in Jai.                                  |
-| `bench.sh`   | Builds both, times/measures each benchmark, prints the table.     |
+| `main.jai`   | All five benchmarks; runs one, chosen by a command-line argument. |
+| `main.odin`  | The same five benchmarks in Odin.                                 |
+| `main.rs`    | The same five benchmarks in Rust.                                 |
+| `main.zig`   | The same five benchmarks in Zig.                                  |
+| `bench.sh`   | Builds all four, times/measures each benchmark, prints the table. |
 
 Each program runs exactly one benchmark per process (`./prog fib`,
 `./prog sieve`, …) so peak memory is measured in isolation.
@@ -33,9 +36,9 @@ Each program runs exactly one benchmark per process (`./prog fib`,
 | `sieve`      | Memory-bound streaming over a 50M-byte array.              |
 | `sort`       | Quicksort of 3,000,000 integers (compute + memory).        |
 
-Every benchmark prints a `checksum` line. The two languages must produce the
-**same** checksum — that's how the script proves both did identical work before
-comparing their timings.
+Every benchmark prints a `checksum` line. All four languages must produce the
+**same** checksum — that's how the script proves everyone did identical work
+before comparing their timings.
 
 ## Running
 
@@ -47,7 +50,7 @@ Useful overrides:
 
 ```sh
 RUNS=10 ./bench.sh                 # more repeats (best wall-time is kept)
-ZIG=/path/to/zig JAI=/path/to/jai ./bench.sh
+JAI=/path/to/jai ODIN=/path/to/odin RUSTC=/path/to/rustc ZIG=/path/to/zig ./bench.sh
 ```
 
 Output reports, per benchmark, the best-of-N wall time and peak resident memory
@@ -55,43 +58,62 @@ for each language and who won, plus binary size and compile time.
 
 ## Results
 
-Best of 3 runs on the [test system](#test-system) below (lower time is better,
-lower memory is better):
+Best of 3 runs on the [test system](#test-system) below (lower is better).
 
-| benchmark    | zig time | jai time | faster    | zig peak | jai peak | leaner |
-| ------------ | -------: | -------: | --------- | -------: | -------: | ------ |
-| `fib`        |   2.10 s |   2.06 s | jai 1.02× |   1.2 MB |   1.5 MB | zig    |
-| `mandelbrot` |   0.45 s |   0.46 s | zig 1.02× |   1.2 MB |   1.5 MB | zig    |
-| `matmul`     |   0.04 s |   3.79 s | zig 94.8× |   7.2 MB |   7.7 MB | zig    |
-| `sieve`      |   0.12 s |   1.61 s | zig 13.4× |  48.9 MB |  49.3 MB | zig    |
-| `sort`       |   0.20 s |   0.26 s | zig 1.30× |  24.1 MB |  24.5 MB | zig    |
+### Wall-clock time (seconds)
 
-| metric      | zig    | jai (OpenJai) |
-| ----------- | ------ | ------------- |
-| binary size | 0.4 MB | 4.6 MB        |
-| compile time | 5.45 s | 1.06 s       |
+| benchmark    |  jai | odin | rust |  zig | fastest    |
+| ------------ | ---: | ---: | ---: | ---: | ---------- |
+| `fib`        | 2.08 | 2.14 | 2.13 | 2.13 | jai 1.02×  |
+| `mandelbrot` | 0.47 | 0.46 | 0.46 | 0.46 | ~tie       |
+| `matmul`     | 3.83 | 0.06 | 0.04 | 0.04 | rust/zig   |
+| `sieve`      | 1.68 | 0.10 | 0.10 | 0.13 | odin/rust  |
+| `sort`       | 0.26 | 0.20 | 0.20 | 0.20 | odin/rust/zig |
+
+### Peak memory (MB)
+
+| benchmark    |  jai | odin | rust |  zig | leanest |
+| ------------ | ---: | ---: | ---: | ---: | ------- |
+| `fib`        |  1.5 |  1.1 |  1.2 |  1.2 | odin    |
+| `mandelbrot` |  1.5 |  1.1 |  1.2 |  1.2 | odin    |
+| `matmul`     |  7.7 |  7.2 |  7.3 |  7.2 | odin    |
+| `sieve`      | 49.3 | 48.8 | 48.9 | 49.0 | odin    |
+| `sort`       | 24.5 | 24.0 | 24.1 | 24.1 | odin    |
+
+### Binary size & compile time
+
+| metric       | jai (OpenJai) | odin   | rust   | zig    |
+| ------------ | ------------- | ------ | ------ | ------ |
+| binary size  | 4.6 MB        | 0.2 MB | 0.4 MB | 0.4 MB |
+| compile time | 1.09 s        | 1.21 s | 0.18 s | 5.84 s |
 
 **Takeaways:**
 
-- Roughly **tied on recursion** (`fib`) and **floating-point** (`mandelbrot`) —
-  the two backends generate comparable scalar code there.
-- Zig wins **massively on tight integer loops**: `matmul` (~95×) and `sieve`
-  (~13×). Zig's LLVM `ReleaseFast` auto-vectorizes these; OpenJai 0.1.0 does not.
-- Zig is consistently a little **leaner on peak memory** (~0.3–0.5 MB) and
-  produces a **~10× smaller binary**.
-- OpenJai **compiles ~5× faster** than Zig here.
+- **Odin, Rust and Zig are effectively tied** on the LLVM-backed workloads.
+  They share the same code-generation backend, so `fib`, `mandelbrot`, `matmul`
+  and `sort` land within noise of each other.
+- Odin, Rust and Zig **auto-vectorize the tight integer loops** (`matmul`,
+  `sieve`); OpenJai 0.1.0 does *not*, so it is ~95× slower on `matmul` and
+  ~13–17× slower on `sieve`.
+- **Odin is consistently the leanest on peak memory** (a fraction of a MB ahead)
+  and ships the **smallest binary** (0.2 MB).
+- **Rust compiles fastest here** (single-file `rustc -O`, 0.18 s), while Zig's
+  full `ReleaseFast` LLVM pipeline is the slowest to build.
 
-Numbers are machine-specific — re-run `./bench.sh` for your own hardware. These
-reflect **OpenJai 0.1.0**, not the official Jai compiler (see notes below).
+Numbers are machine-specific — re-run `./bench.sh` for your own hardware. The
+Jai numbers reflect **OpenJai 0.1.0**, not the official Jai compiler (see notes
+below).
 
 ## Reproducibility notes
 
-- **Zig** is built with `-O ReleaseFast` (LLVM backend, full optimization).
 - **Jai** is built with `-release`.
+- **Odin** is built with `-o:speed`.
+- **Rust** is built with `rustc -O` (single file, no Cargo).
+- **Zig** is built with `-O ReleaseFast` (LLVM backend, full optimization).
 - Time is the **best** of `RUNS` runs (least affected by OS noise); memory is the
   **peak** resident set size reported by `/usr/bin/time -l`.
-- Both produce identical results, so the comparison reflects code generation and
-  runtime, not different algorithms.
+- All four produce identical checksums, so the comparison reflects code
+  generation and runtime, not different algorithms.
 
 ## Test system
 
@@ -103,8 +125,10 @@ The numbers in this repo were produced on:
 | CPU | Apple M1 Max (10 cores), arm64 |
 | Memory | 64 GB |
 | OS | macOS 15.7.7 (build 24G720) |
-| Zig | 0.16.0 (LLVM backend, `-O ReleaseFast`) |
 | Jai | OpenJai 0.1.0 (`-release`) |
+| Odin | dev-2024-04-nightly (`-o:speed`) |
+| Rust | 1.90.0 (`rustc -O`) |
+| Zig | 0.16.0 (LLVM backend, `-O ReleaseFast`) |
 
 Absolute timings are machine-specific; re-run `./bench.sh` to get numbers for
 your own hardware.
@@ -114,9 +138,9 @@ your own hardware.
 The Jai toolchain here is **[OpenJai](https://github.com/withlang-dev/open-jai)**,
 an MIT-licensed clean-room Jai-compatible compiler — a separate project from the
 official (closed-beta) Jai compiler. While writing the suite I hit three
-behaviours in this build that differ from Zig and had to be worked around so
-both languages compute identical results. They're documented inline in
-`main.jai`:
+behaviours in this build that differ from the LLVM-backed languages and had to
+be worked around so all four compute identical results. They're documented
+inline in `main.jai`:
 
 1. **First call to a recursive, value-returning function miscompiles to `0`.**
    The very first invocation of `fib` used inside an accumulating expression
@@ -124,11 +148,12 @@ both languages compute identical results. They're documented inline in
    loop primes correct code generation. The warm-up is negligible next to the
    real workload, so timings are unaffected.
 2. **`u64` comparison is signed.** `a < b` on `u64` operands compiles to a signed
-   compare, so values with the high bit set sort incorrectly relative to Zig.
+   compare, so values with the high bit set sort incorrectly relative to the
+   other languages.
 3. **`u64` right shift is arithmetic** (sign-extending) rather than logical.
 
-To keep the `sort` benchmark identical across both languages, it uses an LCG
-(multiply + add only, which is bit-identical in both) instead of an xorshift
+To keep the `sort` benchmark identical across all four languages, it uses an LCG
+(multiply + add only, which is bit-identical everywhere) instead of an xorshift
 (which relies on logical `>>`), and masks each sort key's high bit with bitwise
 `&` (sign-independent). `u64` *arithmetic* (add/multiply/xor with wraparound) is
 correct in this build — only signed-sensitive comparison and shifts differ.
