@@ -53,6 +53,37 @@ ZIG=/path/to/zig JAI=/path/to/jai ./bench.sh
 Output reports, per benchmark, the best-of-N wall time and peak resident memory
 for each language and who won, plus binary size and compile time.
 
+## Results
+
+Best of 3 runs on the [test system](#test-system) below (lower time is better,
+lower memory is better):
+
+| benchmark    | zig time | jai time | faster    | zig peak | jai peak | leaner |
+| ------------ | -------: | -------: | --------- | -------: | -------: | ------ |
+| `fib`        |   2.10 s |   2.06 s | jai 1.02× |   1.2 MB |   1.5 MB | zig    |
+| `mandelbrot` |   0.45 s |   0.46 s | zig 1.02× |   1.2 MB |   1.5 MB | zig    |
+| `matmul`     |   0.04 s |   3.79 s | zig 94.8× |   7.2 MB |   7.7 MB | zig    |
+| `sieve`      |   0.12 s |   1.61 s | zig 13.4× |  48.9 MB |  49.3 MB | zig    |
+| `sort`       |   0.20 s |   0.26 s | zig 1.30× |  24.1 MB |  24.5 MB | zig    |
+
+| metric      | zig    | jai (OpenJai) |
+| ----------- | ------ | ------------- |
+| binary size | 0.4 MB | 4.6 MB        |
+| compile time | 5.45 s | 1.06 s       |
+
+**Takeaways:**
+
+- Roughly **tied on recursion** (`fib`) and **floating-point** (`mandelbrot`) —
+  the two backends generate comparable scalar code there.
+- Zig wins **massively on tight integer loops**: `matmul` (~95×) and `sieve`
+  (~13×). Zig's LLVM `ReleaseFast` auto-vectorizes these; OpenJai 0.1.0 does not.
+- Zig is consistently a little **leaner on peak memory** (~0.3–0.5 MB) and
+  produces a **~10× smaller binary**.
+- OpenJai **compiles ~5× faster** than Zig here.
+
+Numbers are machine-specific — re-run `./bench.sh` for your own hardware. These
+reflect **OpenJai 0.1.0**, not the official Jai compiler (see notes below).
+
 ## Reproducibility notes
 
 - **Zig** is built with `-O ReleaseFast` (LLVM backend, full optimization).
