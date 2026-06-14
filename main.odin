@@ -147,9 +147,28 @@ bench_sort :: proc() {
 	fmt.printf("checksum %d\n", cs)
 }
 
+bench_collatz :: proc() {
+	N :: 3_000_000
+	total: u64 = 0
+	for i: u64 = 1; i <= N; i += 1 {
+		n := i
+		steps: u64 = 0
+		for n != 1 {
+			if n % 2 == 0 {
+				n = n / 2
+			} else {
+				n = 3 * n + 1
+			}
+			steps += 1
+		}
+		total += steps
+	}
+	fmt.printf("checksum %d\n", total)
+}
+
 main :: proc() {
 	if len(os.args) < 2 {
-		fmt.println("usage: main <fib|mandelbrot|matmul|sieve|sort>")
+		fmt.println("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz>")
 		return
 	}
 	name := os.args[1]
@@ -164,6 +183,8 @@ main :: proc() {
 		bench_sieve()
 	case "sort":
 		bench_sort()
+	case "collatz":
+		bench_collatz()
 	case:
 		fmt.printf("unknown benchmark: %s\n", name)
 	}

@@ -156,11 +156,31 @@ fn benchSort() !void {
     std.debug.print("checksum {d}\n", .{cs});
 }
 
+fn benchCollatz() void {
+    const N: u64 = 3_000_000;
+    var total: u64 = 0;
+    var i: u64 = 1;
+    while (i <= N) : (i += 1) {
+        var n: u64 = i;
+        var steps: u64 = 0;
+        while (n != 1) {
+            if (n % 2 == 0) {
+                n = n / 2;
+            } else {
+                n = 3 * n + 1;
+            }
+            steps += 1;
+        }
+        total +%= steps;
+    }
+    std.debug.print("checksum {d}\n", .{total});
+}
+
 pub fn main(init: std.process.Init.Minimal) !void {
     var it = init.args.iterate();
     _ = it.skip(); // program name
     const name = it.next() orelse {
-        std.debug.print("usage: main <fib|mandelbrot|matmul|sieve|sort>\n", .{});
+        std.debug.print("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz>\n", .{});
         return;
     };
     if (std.mem.eql(u8, name, "fib")) {
@@ -173,6 +193,8 @@ pub fn main(init: std.process.Init.Minimal) !void {
         try benchSieve();
     } else if (std.mem.eql(u8, name, "sort")) {
         try benchSort();
+    } else if (std.mem.eql(u8, name, "collatz")) {
+        benchCollatz();
     } else {
         std.debug.print("unknown benchmark: {s}\n", .{name});
     }

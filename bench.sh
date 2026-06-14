@@ -22,7 +22,7 @@ RUSTC="${RUSTC:-rustc}"
 ODIN="${ODIN:-/Users/marius/Dev/odin-dev-2024-04a/odin}"
 NODE="${NODE:-node}"
 RUNS="${RUNS:-3}"
-BENCHMARKS=(fib mandelbrot matmul sieve sort)
+BENCHMARKS=(collatz fib mandelbrot matmul sieve sort)
 LANGS=(jai js odin rust zig)
 
 BIN="$ROOT/bin"

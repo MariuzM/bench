@@ -140,10 +140,31 @@ function benchSort() {
   console.log("checksum " + cs.toString());
 }
 
+function benchCollatz() {
+  const N = 3_000_000;
+  let total = 0;
+  for (let i = 1; i <= N; i++) {
+    let n = i;
+    let steps = 0;
+    // Parity via `% 2`, not bitwise `& 1`: trajectory values exceed 2^31 and
+    // JS bitwise operators truncate to 32 bits, which would be wrong here.
+    while (n !== 1) {
+      if (n % 2 === 0) {
+        n = n / 2;
+      } else {
+        n = 3 * n + 1;
+      }
+      steps++;
+    }
+    total += steps;
+  }
+  console.log("checksum " + total);
+}
+
 function main() {
   const name = process.argv[2];
   if (!name) {
-    console.log("usage: main <fib|mandelbrot|matmul|sieve|sort>");
+    console.log("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz>");
     return;
   }
   switch (name) {
@@ -161,6 +182,9 @@ function main() {
       break;
     case "sort":
       benchSort();
+      break;
+    case "collatz":
+      benchCollatz();
       break;
     default:
       console.log("unknown benchmark: " + name);

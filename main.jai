@@ -151,6 +151,27 @@ bench_sort :: () {
     print("checksum %\n", cs);
 }
 
+bench_collatz :: () {
+    N :: 3_000_000;
+    total: u64 = 0;
+    i: u64 = 1;
+    while i <= N {
+        // Values stay below 2^32 here, so the high bit is never set: this
+        // compiler's signed `/` and arithmetic `>>` behave identically to the
+        // unsigned forms, and no warmup/masking workaround is needed.
+        n: u64 = i;
+        steps: u64 = 0;
+        while n != 1 {
+            if n % 2 == 0  n = n / 2;
+            else           n = 3 * n + 1;
+            steps += 1;
+        }
+        total += steps;
+        i += 1;
+    }
+    print("checksum %\n", total);
+}
+
 streq :: (a: string, b: string) -> bool {
     if a.count != b.count return false;
     for i: 0..a.count-1 {
@@ -162,7 +183,7 @@ streq :: (a: string, b: string) -> bool {
 main :: () {
     args := get_command_line_arguments();
     if args.count < 2 {
-        print("usage: main <fib|mandelbrot|matmul|sieve|sort>\n");
+        print("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz>\n");
         return;
     }
     name := args[1];
@@ -171,5 +192,6 @@ main :: () {
     else if streq(name, "matmul")      bench_matmul();
     else if streq(name, "sieve")       bench_sieve();
     else if streq(name, "sort")        bench_sort();
+    else if streq(name, "collatz")     bench_collatz();
     else print("unknown benchmark: %\n", name);
 }

@@ -170,11 +170,32 @@ fn bench_sort() {
     println!("checksum {}", cs);
 }
 
+fn bench_collatz() {
+    const N: u64 = 3_000_000;
+    let mut total: u64 = 0;
+    let mut i: u64 = 1;
+    while i <= N {
+        let mut n: u64 = i;
+        let mut steps: u64 = 0;
+        while n != 1 {
+            if n % 2 == 0 {
+                n = n / 2;
+            } else {
+                n = 3 * n + 1;
+            }
+            steps += 1;
+        }
+        total = total.wrapping_add(steps);
+        i += 1;
+    }
+    println!("checksum {}", total);
+}
+
 fn main() {
     let name = match env::args().nth(1) {
         Some(n) => n,
         None => {
-            println!("usage: main <fib|mandelbrot|matmul|sieve|sort>");
+            println!("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz>");
             return;
         }
     };
@@ -184,6 +205,7 @@ fn main() {
         "matmul" => bench_matmul(),
         "sieve" => bench_sieve(),
         "sort" => bench_sort(),
+        "collatz" => bench_collatz(),
         _ => println!("unknown benchmark: {}", name),
     }
 }

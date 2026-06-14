@@ -2,7 +2,7 @@
 
 A small head-to-head benchmark suite comparing **Jai**, **JavaScript** (Node.js),
 **Odin**, **Rust** and **Zig** on runtime speed, peak memory, binary size and
-compile time. The same five workloads are implemented in each language; a build
+compile time. The same six workloads are implemented in each language; a build
 script compiles the four native suites (and launches the JavaScript suite under
 Node), runs every benchmark under `/usr/bin/time`, and prints a side-by-side
 table.
@@ -18,11 +18,11 @@ table.
 
 | File         | What it is                                                        |
 | ------------ | ----------------------------------------------------------------- |
-| `main.jai`   | All five benchmarks; runs one, chosen by a command-line argument. |
-| `main.js`    | The same five benchmarks in JavaScript (run with Node.js).        |
-| `main.odin`  | The same five benchmarks in Odin.                                 |
-| `main.rs`    | The same five benchmarks in Rust.                                 |
-| `main.zig`   | The same five benchmarks in Zig.                                  |
+| `main.jai`   | All six benchmarks; runs one, chosen by a command-line argument.  |
+| `main.js`    | The same six benchmarks in JavaScript (run with Node.js).         |
+| `main.odin`  | The same six benchmarks in Odin.                                  |
+| `main.rs`    | The same six benchmarks in Rust.                                  |
+| `main.zig`   | The same six benchmarks in Zig.                                   |
 | `bench.sh`   | Builds/launches all five, times each benchmark, prints the table. |
 
 Each program runs exactly one benchmark per process (`./prog fib`,
@@ -32,6 +32,7 @@ Each program runs exactly one benchmark per process (`./prog fib`,
 
 | Name         | What it stresses                                            |
 | ------------ | ---------------------------------------------------------- |
+| `collatz`    | Unpredictable branches + integer divide/modulo (Collatz steps for 1..3M). |
 | `fib`        | Recursion / function-call overhead (`fib(30..42)`).        |
 | `mandelbrot` | Floating-point math, tight scalar loop (1200×1200, 1000 iters). |
 | `matmul`     | Integer compute + cache behaviour (512×512 multiply).      |
@@ -68,7 +69,8 @@ Best of 3 runs on the [test system](#test-system) below (lower is better).
 
 | benchmark    |  jai |   js | odin | rust |  zig | fastest       |
 | ------------ | ---: | ---: | ---: | ---: | ---: | ------------- |
-| `fib`        | 2.07 | 6.73 | 2.14 | 2.12 | 2.13 | jai           |
+| `collatz`    | 0.43 | 6.47 | 0.42 | 0.42 | 0.42 | odin/rust/zig |
+| `fib`        | 2.07 | 6.72 | 2.15 | 2.13 | 2.13 | jai           |
 | `mandelbrot` | 0.47 | 0.50 | 0.46 | 0.46 | 0.46 | odin/rust/zig |
 | `matmul`     | 3.83 | 0.21 | 0.06 | 0.04 | 0.04 | rust/zig      |
 | `sieve`      | 1.68 | 0.21 | 0.10 | 0.10 | 0.13 | odin/rust     |
@@ -78,7 +80,8 @@ Best of 3 runs on the [test system](#test-system) below (lower is better).
 
 | benchmark    |  jai |   js | odin | rust |  zig | leanest |
 | ------------ | ---: | ---: | ---: | ---: | ---: | ------- |
-| `fib`        |  1.5 | 45.0 |  1.1 |  1.2 |  1.2 | odin    |
+| `collatz`    |  1.6 | 45.8 |  1.2 |  1.2 |  1.3 | odin    |
+| `fib`        |  1.5 | 44.9 |  1.1 |  1.2 |  1.2 | odin    |
 | `mandelbrot` |  1.5 | 47.4 |  1.1 |  1.2 |  1.2 | odin    |
 | `matmul`     |  7.7 | 50.3 |  7.2 |  7.3 |  7.3 | odin    |
 | `sieve`      | 49.3 | 93.9 | 48.8 | 48.9 | 48.9 | odin    |
@@ -97,19 +100,24 @@ binary or compile step.
 **Takeaways:**
 
 - **Odin, Rust and Zig are effectively tied** on the LLVM-backed workloads.
-  They share the same code-generation backend, so `fib`, `mandelbrot`, `matmul`
-  and `sort` land within noise of each other.
+  They share the same code-generation backend, so `collatz`, `fib`,
+  `mandelbrot`, `matmul` and `sort` land within noise of each other.
 - Odin, Rust and Zig **auto-vectorize the tight integer loops** (`matmul`,
   `sieve`); OpenJai 0.1.0 does *not*, so it is ~95× slower on `matmul` and
   ~13–17× slower on `sieve`.
+- **`collatz` is where OpenJai catches up** (0.43 vs 0.42 s): its branchy,
+  scalar, divide-heavy inner loop has no vectorizable structure, so the LLVM
+  backends have no advantage to exploit. It's a good counterweight to `matmul`
+  and `sieve`.
 - **Odin is consistently the leanest on peak memory** (a fraction of a MB ahead)
   and ships the **smallest binary** (0.2 MB).
 - **Rust compiles fastest here** (single-file `rustc -O`, 0.18 s), while Zig's
   full `ReleaseFast` LLVM pipeline is the slowest to build.
 - **JavaScript (Node V8) is more competitive than expected** on the hot numeric
   loops — `matmul`, `sieve` and `mandelbrot` land within a few× of native — but
-  pays for it on recursion (`fib`, ~3× slower), on `sort` (`BigInt` overhead),
-  and on memory (a ~45 MB+ runtime floor regardless of workload).
+  pays heavily on the branchy/recursive workloads (`collatz` and `fib`, both
+  ~15× and ~3× slower), on `sort` (`BigInt` overhead), and on memory (a ~45 MB+
+  runtime floor regardless of workload).
 
 Numbers are machine-specific — re-run `./bench.sh` for your own hardware. The
 Jai numbers reflect **OpenJai 0.1.0**, not the official Jai compiler (see notes
