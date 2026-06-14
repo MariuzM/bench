@@ -140,6 +140,184 @@ function benchSort() {
   console.log("checksum " + cs.toString());
 }
 
+// --- software 3D rasterizer -------------------------------------------------
+// Renders a spinning, Gouraud-shaded UV sphere into an in-memory framebuffer
+// with a z-buffer, for a fixed number of frames. Uses only +,-,*,/ and a
+// hand-rolled polynomial sin/cos (Math.sin differs per engine) so every
+// language produces a bit-identical checksum. The per-frame checksum fold uses
+// BigInt to stay 64-bit-exact with the native builds. FPS = frames / wall_time.
+
+function rFloor(y) {
+  const f = Math.trunc(y);
+  if (f > y) return f - 1.0;
+  return f;
+}
+
+function rSin(xin) {
+  const TWO_PI = 6.283185307179586;
+  const k = rFloor(xin / TWO_PI + 0.5);
+  const x = xin - k * TWO_PI;
+  const x2 = x * x;
+  let p = -1.0 / 1307674368000.0;
+  p = 1.0 / 6227020800.0 + x2 * p;
+  p = -1.0 / 39916800.0 + x2 * p;
+  p = 1.0 / 362880.0 + x2 * p;
+  p = -1.0 / 5040.0 + x2 * p;
+  p = 1.0 / 120.0 + x2 * p;
+  p = -1.0 / 6.0 + x2 * p;
+  p = 1.0 + x2 * p;
+  return x * p;
+}
+
+function rCos(x) {
+  return rSin(x + 1.5707963267948966);
+}
+
+function edge(ax, ay, bx, by, cx, cy) {
+  return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+}
+
+function benchRaster() {
+  const W = 640;
+  const H = 480;
+  const RINGS = 24;
+  const SECTORS = 24;
+  const FRAMES = 240;
+  const NV = (RINGS + 1) * (SECTORS + 1);
+  const FOCAL = 500.0;
+  const CAM_DIST = 3.0;
+  const MASK64 = (1n << 64n) - 1n;
+
+  const bx = new Float64Array(NV);
+  const by = new Float64Array(NV);
+  const bz = new Float64Array(NV);
+  let nv = 0;
+  for (let i = 0; i <= RINGS; i++) {
+    const theta = 3.141592653589793 * (i / RINGS);
+    const st = rSin(theta);
+    const ct = rCos(theta);
+    for (let j = 0; j <= SECTORS; j++) {
+      const phi = 6.283185307179586 * (j / SECTORS);
+      const sp = rSin(phi);
+      const cp = rCos(phi);
+      bx[nv] = st * cp;
+      by[nv] = ct;
+      bz[nv] = st * sp;
+      nv += 1;
+    }
+  }
+
+  const sx = new Float64Array(NV);
+  const sy = new Float64Array(NV);
+  const sz = new Float64Array(NV);
+  const si = new Float64Array(NV);
+
+  const color = new Uint8Array(W * H);
+  const zbuf = new Float64Array(W * H);
+
+  let checksum = 0n;
+
+  for (let f = 0; f < FRAMES; f++) {
+    const ang = f * 0.0125;
+    const cy = rCos(ang);
+    const syr = rSin(ang);
+    const axx = ang * 0.5;
+    const cx = rCos(axx);
+    const sxr = rSin(axx);
+
+    for (let v = 0; v < nv; v++) {
+      const px0 = bx[v];
+      const py0 = by[v];
+      const pz0 = bz[v];
+      const rx = px0 * cy + pz0 * syr;
+      const rz = -px0 * syr + pz0 * cy;
+      const ry = py0;
+      const ry2 = ry * cx - rz * sxr;
+      const rz2 = ry * sxr + rz * cx;
+      let inten = -rz2;
+      if (inten < 0.0) inten = 0.0;
+      const zc = rz2 + CAM_DIST;
+      const invz = 1.0 / zc;
+      sx[v] = rx * invz * FOCAL + W * 0.5;
+      sy[v] = ry2 * invz * FOCAL + H * 0.5;
+      sz[v] = zc;
+      si[v] = inten;
+    }
+
+    color.fill(0);
+    zbuf.fill(1.0e30);
+
+    for (let ri = 0; ri < RINGS; ri++) {
+      for (let sj = 0; sj < SECTORS; sj++) {
+        const a = ri * (SECTORS + 1) + sj;
+        const b = a + (SECTORS + 1);
+        const tris = [
+          [a, b, a + 1],
+          [a + 1, b, b + 1],
+        ];
+        for (let t = 0; t < 2; t++) {
+          const i0 = tris[t][0];
+          const i1 = tris[t][1];
+          const i2 = tris[t][2];
+          const area = edge(sx[i0], sy[i0], sx[i1], sy[i1], sx[i2], sy[i2]);
+          if (area <= 0.0) continue;
+          let mnx = sx[i0];
+          if (sx[i1] < mnx) mnx = sx[i1];
+          if (sx[i2] < mnx) mnx = sx[i2];
+          let mxx = sx[i0];
+          if (sx[i1] > mxx) mxx = sx[i1];
+          if (sx[i2] > mxx) mxx = sx[i2];
+          let mny = sy[i0];
+          if (sy[i1] < mny) mny = sy[i1];
+          if (sy[i2] < mny) mny = sy[i2];
+          let mxy = sy[i0];
+          if (sy[i1] > mxy) mxy = sy[i1];
+          if (sy[i2] > mxy) mxy = sy[i2];
+          if (mnx < 0.0) mnx = 0.0;
+          if (mxx > W - 1) mxx = W - 1;
+          if (mny < 0.0) mny = 0.0;
+          if (mxy > H - 1) mxy = H - 1;
+          const x0 = Math.trunc(mnx);
+          const x1 = Math.trunc(mxx);
+          const y0 = Math.trunc(mny);
+          const y1 = Math.trunc(mxy);
+          for (let py = y0; py <= y1; py++) {
+            const pcy = py + 0.5;
+            for (let px = x0; px <= x1; px++) {
+              const pcx = px + 0.5;
+              const w0 = edge(sx[i1], sy[i1], sx[i2], sy[i2], pcx, pcy);
+              const w1 = edge(sx[i2], sy[i2], sx[i0], sy[i0], pcx, pcy);
+              const w2 = edge(sx[i0], sy[i0], sx[i1], sy[i1], pcx, pcy);
+              if (w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0) {
+                const l0 = w0 / area;
+                const l1 = w1 / area;
+                const l2 = w2 / area;
+                const depth = l0 * sz[i0] + l1 * sz[i1] + l2 * sz[i2];
+                const idx = py * W + px;
+                if (depth < zbuf[idx]) {
+                  zbuf[idx] = depth;
+                  let inten = l0 * si[i0] + l1 * si[i1] + l2 * si[i2];
+                  if (inten < 0.0) inten = 0.0;
+                  if (inten > 1.0) inten = 1.0;
+                  color[idx] = Math.trunc(inten * 255.0);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    let frame_sum = 0;
+    for (let i = 0; i < W * H; i++) {
+      frame_sum += color[i];
+    }
+    checksum = (checksum * 1000003n + BigInt(frame_sum)) & MASK64;
+  }
+
+  console.log("checksum " + checksum.toString());
+}
+
 function benchCollatz() {
   const N = 3_000_000;
   let total = 0;
@@ -164,7 +342,7 @@ function benchCollatz() {
 function main() {
   const name = process.argv[2];
   if (!name) {
-    console.log("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz>");
+    console.log("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster>");
     return;
   }
   switch (name) {
@@ -185,6 +363,9 @@ function main() {
       break;
     case "collatz":
       benchCollatz();
+      break;
+    case "raster":
+      benchRaster();
       break;
     default:
       console.log("unknown benchmark: " + name);

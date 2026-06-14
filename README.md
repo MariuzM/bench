@@ -2,7 +2,7 @@
 
 A small head-to-head benchmark suite comparing **C**, **C++**, **Jai**,
 **JavaScript** (Node.js), **Odin**, **Rust** and **Zig** on runtime speed, peak
-memory, binary size and compile time. The same six workloads are implemented in
+memory, binary size and compile time. The same seven workloads are implemented in
 each language; a build script compiles the six native suites (and launches the
 JavaScript suite under Node), runs every benchmark under `/usr/bin/time`, and
 prints a side-by-side table.
@@ -18,13 +18,13 @@ prints a side-by-side table.
 
 | File         | What it is                                                        |
 | ------------ | ----------------------------------------------------------------- |
-| `main.c`     | All six benchmarks; runs one, chosen by a command-line argument.  |
-| `main.cpp`   | The same six benchmarks in C++.                                   |
-| `main.jai`   | The same six benchmarks in Jai.                                  |
-| `main.js`    | The same six benchmarks in JavaScript (run with Node.js).         |
-| `main.odin`  | The same six benchmarks in Odin.                                  |
-| `main.rs`    | The same six benchmarks in Rust.                                  |
-| `main.zig`   | The same six benchmarks in Zig.                                   |
+| `main.c`     | All seven benchmarks; runs one, chosen by a command-line argument.|
+| `main.cpp`   | The same seven benchmarks in C++.                                 |
+| `main.jai`   | The same seven benchmarks in Jai.                                |
+| `main.js`    | The same seven benchmarks in JavaScript (run with Node.js).       |
+| `main.odin`  | The same seven benchmarks in Odin.                                |
+| `main.rs`    | The same seven benchmarks in Rust.                                |
+| `main.zig`   | The same seven benchmarks in Zig.                                 |
 | `bench.sh`   | Builds/launches all seven, times each benchmark, prints the table.|
 
 Each program runs exactly one benchmark per process (`./prog fib`,
@@ -40,6 +40,7 @@ Each program runs exactly one benchmark per process (`./prog fib`,
 | `matmul`     | Integer compute + cache behaviour (512×512 multiply).      |
 | `sieve`      | Memory-bound streaming over a 50M-byte array.              |
 | `sort`       | Quicksort of 3,000,000 integers (compute + memory).        |
+| `raster`     | Software 3D renderer: spins a Gouraud-shaded sphere into a 640×480 z-buffered framebuffer for 240 frames (float transform + triangle rasterization). |
 
 Every benchmark prints a `checksum` line. All seven languages must produce the
 **same** checksum — that's how the script proves everyone did identical work
@@ -47,6 +48,19 @@ before comparing their timings. JavaScript uses `BigInt` for the `sort`
 benchmark's 64-bit wrapping arithmetic so it stays bit-identical with the
 native builds. C and C++ are built with `-ffp-contract=off` so the `mandelbrot`
 float math doesn't fuse into FMA (which would diverge from the other backends).
+
+The `raster` benchmark is a real (if tiny) software 3D renderer with no external
+dependencies — it transforms and projects a UV-sphere mesh, rasterizes triangles
+with a z-buffer, and Gouraud-shades them into an in-memory framebuffer, then
+folds the framebuffer into the per-frame checksum. To stay bit-identical across
+all seven languages it uses **only** `+ - * /` and comparisons: it ships its own
+polynomial `sin`/`cos` (each language's `libm`/`Math.sin` differs in the last
+bits) and avoids `sqrt` entirely (the unit-sphere vertex *is* its own normal).
+Because the build script already times each benchmark, **frames-per-second is
+simply `240 / wall_time`**, reported in its own table below. One OpenJai quirk
+surfaced here: it rounds *named* float constants (`X :: 3.14…`) to 32-bit
+`float`, so the angle constants in its `sin`/`cos` are float64 *variables*
+instead — otherwise the range reduction would drift and break the checksum.
 
 ## Running
 
@@ -78,6 +92,16 @@ Best of 3 runs on the [test system](#test-system) below (lower is better).
 | `matmul`     | 0.04 | 0.04 | 3.80 | 0.21 | 0.06 | 0.04 | 0.04 | c/cpp/rust/zig |
 | `sieve`      | 0.10 | 0.10 | 1.66 | 0.21 | 0.10 | 0.10 | 0.13 | c/cpp/odin/rust |
 | `sort`       | 0.20 | 0.20 | 0.26 | 0.50 | 0.20 | 0.21 | 0.20 | c/cpp/odin/zig |
+| `raster`     | 0.27 | 0.27 | 10.37 | 0.54 | 0.23 | 0.23 | 0.37 | odin/rust |
+
+### Rendering throughput (frames per second)
+
+The `raster` benchmark renders 240 frames, so FPS = `240 / wall_time` (higher is
+better).
+
+| metric  |    c |  cpp |  jai |   js | odin | rust |  zig | fastest   |
+| ------- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --------- |
+| `raster` fps | 888.9 | 888.9 | 23.1 | 444.4 | 1043.5 | 1043.5 | 648.6 | odin/rust |
 
 ### Peak memory (MB)
 
@@ -89,13 +113,14 @@ Best of 3 runs on the [test system](#test-system) below (lower is better).
 | `matmul`     |  7.1 |  7.1 |  7.6 | 49.9 |  7.2 |  7.3 |  7.3 | c       |
 | `sieve`      | 48.7 | 48.8 | 49.3 | 93.9 | 48.8 | 48.9 | 48.9 | c       |
 | `sort`       | 23.9 | 24.0 | 24.5 | 72.2 | 24.0 | 24.1 | 24.1 | c       |
+| `raster`     |  3.8 |  3.8 |  4.4 | 78.6 |  3.8 |  3.9 |  3.8 | c       |
 
 ### Binary size & compile time
 
 | metric       | c       | cpp     | jai (OpenJai) | js (Node) | odin   | rust   | zig    |
 | ------------ | ------- | ------- | ------------- | --------- | ------ | ------ | ------ |
 | binary size  | 0.03 MB | 0.04 MB | 4.6 MB        | n/a       | 0.2 MB | 0.4 MB | 0.4 MB |
-| compile time | 0.08 s  | 0.40 s  | 1.12 s        | n/a       | 1.21 s | 0.18 s | 5.83 s |
+| compile time | 0.10 s  | 0.42 s  | 9.70 s        | n/a       | 1.20 s | 0.24 s | 5.57 s |
 
 JavaScript is JIT-compiled by Node at run time, so it has no ahead-of-time
 binary or compile step.
@@ -113,13 +138,21 @@ binary or compile step.
   scalar, divide-heavy inner loop has no vectorizable structure, so the LLVM
   backends have no advantage to exploit. It's a good counterweight to `matmul`
   and `sieve`.
+- **`raster` is the most demanding workload** — a full software 3D pipeline
+  (transform, project, rasterize, z-test, shade) per frame. The LLVM backends
+  push **~650–1040 FPS** (Odin and Rust fastest at ~1040), while **OpenJai
+  manages only ~23 FPS** (~45× slower): its float-heavy inner loops get none of
+  the scalar optimization the LLVM backends apply, the same weakness seen on
+  `matmul`/`sieve`. Node lands in the middle at ~444 FPS — respectable for a JIT,
+  but still ~2.3× behind native and carrying a ~79 MB memory floor vs ~4 MB.
 - **C is consistently the leanest on peak memory** — it has essentially no
   runtime, so it sits a fraction of a MB below everything else on every
   workload. C and C++ also ship the **smallest binaries** (~0.03–0.04 MB,
   single-file `-O3` with no static libc bloat).
-- **C compiles fastest here** (single-file `cc -O3`, 0.08 s); C++ pays a little
-  for `<iostream>`/`<vector>` template instantiation (0.40 s), while Zig's full
-  `ReleaseFast` LLVM pipeline is the slowest to build.
+- **C compiles fastest here** (single-file `cc -O3`, ~0.1 s); C++ pays a little
+  for `<iostream>`/`<vector>` template instantiation (~0.4 s). OpenJai is now the
+  slowest to build (~9.7 s, up sharply once the `raster` math was added),
+  followed by Zig's full `ReleaseFast` LLVM pipeline (~5.6 s).
 - **JavaScript (Node V8) is more competitive than expected** on the hot numeric
   loops — `matmul`, `sieve` and `mandelbrot` land within a few× of native — but
   pays heavily on the branchy/recursive workloads (`collatz` and `fib`, both
@@ -143,6 +176,9 @@ below).
   **peak** resident set size reported by `/usr/bin/time -l`.
 - All seven produce identical checksums, so the comparison reflects code
   generation and runtime, not different algorithms.
+- The `raster` benchmark renders a fixed **240 frames**; its FPS row is just
+  `240 / best wall time`. It is self-contained (own polynomial `sin`/`cos`, no
+  `sqrt`, only `+ - * /`) so every language renders bit-identical frames.
 
 ## Test system
 
@@ -168,9 +204,9 @@ your own hardware.
 
 The Jai toolchain here is **[OpenJai](https://github.com/withlang-dev/open-jai)**,
 an MIT-licensed clean-room Jai-compatible compiler — a separate project from the
-official (closed-beta) Jai compiler. While writing the suite I hit three
+official (closed-beta) Jai compiler. While writing the suite I hit four
 behaviours in this build that differ from the LLVM-backed languages and had to
-be worked around so all five compute identical results. They're documented
+be worked around so all seven compute identical results. They're documented
 inline in `main.jai`:
 
 1. **First call to a recursive, value-returning function miscompiles to `0`.**
@@ -182,8 +218,14 @@ inline in `main.jai`:
    compare, so values with the high bit set sort incorrectly relative to the
    other languages.
 3. **`u64` right shift is arithmetic** (sign-extending) rather than logical.
+4. **Named float constants are rounded to 32-bit `float`.** A `TWO_PI ::
+   6.283185307179586` (or even `TWO_PI : float64 : …`) keeps only `float`
+   precision when later used in `float64` math, whereas float64 *variables* and
+   inline literals keep full precision. The `raster` benchmark's `sin`/`cos`
+   range-reduction constants are therefore float64 variables; as named constants
+   they drifted by ~1 ULP and broke the cross-language checksum.
 
-To keep the `sort` benchmark identical across all five languages, it uses an LCG
+To keep the `sort` benchmark identical across all seven languages, it uses an LCG
 (multiply + add only, which is bit-identical everywhere) instead of an xorshift
 (which relies on logical `>>`), and masks each sort key's high bit with bitwise
 `&` (sign-independent). `u64` *arithmetic* (add/multiply/xor with wraparound) is

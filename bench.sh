@@ -24,8 +24,11 @@ CC="${CC:-cc}"
 CXX="${CXX:-c++}"
 NODE="${NODE:-node}"
 RUNS="${RUNS:-3}"
-BENCHMARKS=(collatz fib mandelbrot matmul sieve sort)
+BENCHMARKS=(collatz fib mandelbrot matmul sieve sort raster)
 LANGS=(c cpp jai js odin rust zig)
+# Frames rendered by the `raster` benchmark (must match RASTER_FRAMES in the
+# source files); used to derive frames-per-second from the measured wall time.
+RASTER_FRAMES=240
 
 BIN="$ROOT/bin"
 mkdir -p "$BIN"
@@ -156,6 +159,17 @@ for b in "${BENCHMARKS[@]}"; do
   for l in "${LANGS[@]}"; do vname="T_${l}_${b}"; printf " | %8s" "${!vname}"; done
   printf " | %s\n" "$(min_lang T "$b")"
 done
+
+echo
+echo "================================ RASTER FPS =================================="
+echo "Software 3D rasterizer: $RASTER_FRAMES frames / best wall time (higher better)."
+printf "%-12s" "frames/s"
+for l in "${LANGS[@]}"; do
+  vname="T_${l}_raster"; t=${!vname}
+  printf " | %8s" "$(awk -v f="$RASTER_FRAMES" -v t="$t" 'BEGIN { if (t > 0) printf "%.1f", f / t; else printf "n/a" }')"
+done
+printf " | %s\n" "$(min_lang T raster)"
+echo "(fastest wall-time on raster = highest FPS: $(min_lang T raster))"
 
 echo
 echo "================================= PEAK (MB) =================================="
