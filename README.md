@@ -5,6 +5,13 @@ speed, peak memory, binary size and compile time. The same five workloads are
 implemented in each language; a build script compiles both, runs every
 benchmark under `/usr/bin/time`, and prints a side-by-side table.
 
+> ⚠️ **This is not the official Jai compiler.** The Jai side is built with
+> **OpenJai**, an MIT-licensed clean-room Jai-compatible compiler — *not*
+> Jonathan Blow's closed-beta Jai toolchain. Results reflect OpenJai's code
+> generation, which is not representative of official Jai. See
+> [OpenJai: an MIT-licensed cleanroom Jai compiler](https://github.com/withlang-dev/open-jai)
+> and the [compiler notes](#a-note-on-the-jai-compiler-openjai) below.
+
 ## Layout
 
 | File         | What it is                                                        |
@@ -55,12 +62,30 @@ for each language and who won, plus binary size and compile time.
 - Both produce identical results, so the comparison reflects code generation and
   runtime, not different algorithms.
 
+## Test system
+
+The numbers in this repo were produced on:
+
+| | |
+| --- | --- |
+| Machine | Apple MacBook Pro (MacBookPro18,2) |
+| CPU | Apple M1 Max (10 cores), arm64 |
+| Memory | 64 GB |
+| OS | macOS 15.7.7 (build 24G720) |
+| Zig | 0.16.0 (LLVM backend, `-O ReleaseFast`) |
+| Jai | OpenJai 0.1.0 (`-release`) |
+
+Absolute timings are machine-specific; re-run `./bench.sh` to get numbers for
+your own hardware.
+
 ## A note on the Jai compiler (OpenJai)
 
-The Jai toolchain here is **OpenJai**, an independent Jai-compatible compiler.
-While writing the suite I hit three behaviours in this build that differ from
-Zig and had to be worked around so both languages compute identical results.
-They're documented inline in `main.jai`:
+The Jai toolchain here is **[OpenJai](https://github.com/withlang-dev/open-jai)**,
+an MIT-licensed clean-room Jai-compatible compiler — a separate project from the
+official (closed-beta) Jai compiler. While writing the suite I hit three
+behaviours in this build that differ from Zig and had to be worked around so
+both languages compute identical results. They're documented inline in
+`main.jai`:
 
 1. **First call to a recursive, value-returning function miscompiles to `0`.**
    The very first invocation of `fib` used inside an accumulating expression
