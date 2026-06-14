@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 #
-# Builds the Zig, Jai, Rust and Odin benchmark suites, runs each benchmark under
-# /usr/bin/time, and prints a side-by-side comparison of wall-clock time, peak
-# memory (RSS), binary size and compile time. Each benchmark prints a "checksum"
-# line; the script verifies every language agrees on it before trusting the
-# numbers.
+# Builds the Jai, Odin, Rust and Zig benchmark suites (and the JavaScript suite,
+# run under Node.js), runs each benchmark under /usr/bin/time, and prints a
+# side-by-side comparison of wall-clock time, peak memory (RSS), binary size and
+# compile time. Each benchmark prints a "checksum" line; the script verifies
+# every language agrees on it before trusting the numbers.
 #
-# Env overrides: ZIG, JAI, RUSTC, ODIN (compiler paths), RUNS (timed repeats).
-# Written for bash 3.2 (macOS default), so it uses indirect variable references
-# instead of associative arrays.
+# JavaScript is interpreted/JIT-compiled by Node at run time, so it has no
+# ahead-of-time binary or compile step (shown as "n/a" in those rows).
+#
+# Env overrides: JAI, ODIN, RUSTC, ZIG (compiler paths), NODE (runtime),
+# RUNS (timed repeats). Written for bash 3.2 (macOS default), so it uses
+# indirect variable references instead of associative arrays.
 
 set -euo pipefail
 
@@ -17,9 +20,10 @@ ZIG="${ZIG:-/Users/marius/Dev/zig-0.16.0/zig}"
 JAI="${JAI:-/Users/marius/Dev/jai/bin/jai}"
 RUSTC="${RUSTC:-rustc}"
 ODIN="${ODIN:-/Users/marius/Dev/odin-dev-2024-04a/odin}"
+NODE="${NODE:-node}"
 RUNS="${RUNS:-3}"
 BENCHMARKS=(fib mandelbrot matmul sieve sort)
-LANGS=(jai odin rust zig)
+LANGS=(jai js odin rust zig)
 
 BIN="$ROOT/bin"
 mkdir -p "$BIN"
@@ -74,7 +78,7 @@ min_lang() {
 
 # --- build -----------------------------------------------------------------
 
-echo "Building (Zig ReleaseFast / Jai release / Rust -O / Odin -o:speed)..."
+echo "Building (Jai release / Odin -o:speed / Rust -O / Zig ReleaseFast; JS = Node)..."
 
 BINOF_zig="$BIN/zig_bench"
 BUILD_zig=$(/usr/bin/time -p "$ZIG" build-exe "$ROOT/main.zig" -O ReleaseFast \
@@ -96,7 +100,15 @@ BINOF_odin="$BIN/odin_bench"
 BUILD_odin=$(cd "$TMP" && /usr/bin/time -p "$ODIN" build "$ROOT/main.odin" -file \
   -o:speed -out:"$BINOF_odin" 2>&1 | awk '/real/ {print $2; exit}')
 
+# JavaScript has no compile step: wrap "node main.js" in a tiny launcher so the
+# generic runner can invoke it like any other benchmark binary.
+BINOF_js="$BIN/js_bench"
+printf '#!/bin/sh\nexec "%s" "%s" "$@"\n' "$NODE" "$ROOT/main.js" >"$BINOF_js"
+chmod +x "$BINOF_js"
+BUILD_js="n/a"
+
 for l in "${LANGS[@]}"; do
+  if [ "$l" = "js" ]; then SIZE_js="n/a"; continue; fi
   bvar="BINOF_$l"
   eval "SIZE_$l=\$(stat -f%z \"\${$bvar}\")"
 done
@@ -148,7 +160,10 @@ done
 echo
 echo "============================ BINARY SIZE / COMPILE ==========================="
 printf "%-12s" "binary MB"
-for l in "${LANGS[@]}"; do vname="SIZE_$l"; printf " | %8s" "$(human_mb "${!vname}")"; done
+for l in "${LANGS[@]}"; do
+  vname="SIZE_$l"; v=${!vname}
+  if [ "$v" = "n/a" ]; then printf " | %8s" "n/a"; else printf " | %8s" "$(human_mb "$v")"; fi
+done
 printf "\n"
 printf "%-12s" "compile s"
 for l in "${LANGS[@]}"; do vname="BUILD_$l"; printf " | %8s" "${!vname}"; done

@@ -1,9 +1,10 @@
-# Jai vs Odin vs Rust vs Zig benchmarks
+# Jai vs JavaScript vs Odin vs Rust vs Zig benchmarks
 
-A small head-to-head benchmark suite comparing **Jai**, **Odin**, **Rust** and
-**Zig** on runtime speed, peak memory, binary size and compile time. The same
-five workloads are implemented in each language; a build script compiles all
-four, runs every benchmark under `/usr/bin/time`, and prints a side-by-side
+A small head-to-head benchmark suite comparing **Jai**, **JavaScript** (Node.js),
+**Odin**, **Rust** and **Zig** on runtime speed, peak memory, binary size and
+compile time. The same five workloads are implemented in each language; a build
+script compiles the four native suites (and launches the JavaScript suite under
+Node), runs every benchmark under `/usr/bin/time`, and prints a side-by-side
 table.
 
 > ⚠️ **This is not the official Jai compiler.** The Jai side is built with
@@ -18,10 +19,11 @@ table.
 | File         | What it is                                                        |
 | ------------ | ----------------------------------------------------------------- |
 | `main.jai`   | All five benchmarks; runs one, chosen by a command-line argument. |
+| `main.js`    | The same five benchmarks in JavaScript (run with Node.js).        |
 | `main.odin`  | The same five benchmarks in Odin.                                 |
 | `main.rs`    | The same five benchmarks in Rust.                                 |
 | `main.zig`   | The same five benchmarks in Zig.                                  |
-| `bench.sh`   | Builds all four, times/measures each benchmark, prints the table. |
+| `bench.sh`   | Builds/launches all five, times each benchmark, prints the table. |
 
 Each program runs exactly one benchmark per process (`./prog fib`,
 `./prog sieve`, …) so peak memory is measured in isolation.
@@ -36,9 +38,11 @@ Each program runs exactly one benchmark per process (`./prog fib`,
 | `sieve`      | Memory-bound streaming over a 50M-byte array.              |
 | `sort`       | Quicksort of 3,000,000 integers (compute + memory).        |
 
-Every benchmark prints a `checksum` line. All four languages must produce the
+Every benchmark prints a `checksum` line. All five languages must produce the
 **same** checksum — that's how the script proves everyone did identical work
-before comparing their timings.
+before comparing their timings. JavaScript uses `BigInt` for the `sort`
+benchmark's 64-bit wrapping arithmetic so it stays bit-identical with the
+native builds.
 
 ## Running
 
@@ -50,7 +54,7 @@ Useful overrides:
 
 ```sh
 RUNS=10 ./bench.sh                 # more repeats (best wall-time is kept)
-JAI=/path/to/jai ODIN=/path/to/odin RUSTC=/path/to/rustc ZIG=/path/to/zig ./bench.sh
+JAI=/path/to/jai ODIN=/path/to/odin RUSTC=/path/to/rustc ZIG=/path/to/zig NODE=/path/to/node ./bench.sh
 ```
 
 Output reports, per benchmark, the best-of-N wall time and peak resident memory
@@ -62,30 +66,33 @@ Best of 3 runs on the [test system](#test-system) below (lower is better).
 
 ### Wall-clock time (seconds)
 
-| benchmark    |  jai | odin | rust |  zig | fastest    |
-| ------------ | ---: | ---: | ---: | ---: | ---------- |
-| `fib`        | 2.08 | 2.14 | 2.13 | 2.13 | jai 1.02×  |
-| `mandelbrot` | 0.47 | 0.46 | 0.46 | 0.46 | ~tie       |
-| `matmul`     | 3.83 | 0.06 | 0.04 | 0.04 | rust/zig   |
-| `sieve`      | 1.68 | 0.10 | 0.10 | 0.13 | odin/rust  |
-| `sort`       | 0.26 | 0.20 | 0.20 | 0.20 | odin/rust/zig |
+| benchmark    |  jai |   js | odin | rust |  zig | fastest       |
+| ------------ | ---: | ---: | ---: | ---: | ---: | ------------- |
+| `fib`        | 2.07 | 6.73 | 2.14 | 2.12 | 2.13 | jai           |
+| `mandelbrot` | 0.47 | 0.50 | 0.46 | 0.46 | 0.46 | odin/rust/zig |
+| `matmul`     | 3.83 | 0.21 | 0.06 | 0.04 | 0.04 | rust/zig      |
+| `sieve`      | 1.68 | 0.21 | 0.10 | 0.10 | 0.13 | odin/rust     |
+| `sort`       | 0.26 | 0.50 | 0.20 | 0.20 | 0.20 | odin/rust/zig |
 
 ### Peak memory (MB)
 
-| benchmark    |  jai | odin | rust |  zig | leanest |
-| ------------ | ---: | ---: | ---: | ---: | ------- |
-| `fib`        |  1.5 |  1.1 |  1.2 |  1.2 | odin    |
-| `mandelbrot` |  1.5 |  1.1 |  1.2 |  1.2 | odin    |
-| `matmul`     |  7.7 |  7.2 |  7.3 |  7.2 | odin    |
-| `sieve`      | 49.3 | 48.8 | 48.9 | 49.0 | odin    |
-| `sort`       | 24.5 | 24.0 | 24.1 | 24.1 | odin    |
+| benchmark    |  jai |   js | odin | rust |  zig | leanest |
+| ------------ | ---: | ---: | ---: | ---: | ---: | ------- |
+| `fib`        |  1.5 | 45.0 |  1.1 |  1.2 |  1.2 | odin    |
+| `mandelbrot` |  1.5 | 47.4 |  1.1 |  1.2 |  1.2 | odin    |
+| `matmul`     |  7.7 | 50.3 |  7.2 |  7.3 |  7.3 | odin    |
+| `sieve`      | 49.3 | 93.9 | 48.8 | 48.9 | 48.9 | odin    |
+| `sort`       | 24.5 | 72.0 | 24.0 | 24.1 | 24.1 | odin    |
 
 ### Binary size & compile time
 
-| metric       | jai (OpenJai) | odin   | rust   | zig    |
-| ------------ | ------------- | ------ | ------ | ------ |
-| binary size  | 4.6 MB        | 0.2 MB | 0.4 MB | 0.4 MB |
-| compile time | 1.09 s        | 1.21 s | 0.18 s | 5.84 s |
+| metric       | jai (OpenJai) | js (Node) | odin   | rust   | zig    |
+| ------------ | ------------- | --------- | ------ | ------ | ------ |
+| binary size  | 4.6 MB        | n/a       | 0.2 MB | 0.4 MB | 0.4 MB |
+| compile time | 1.10 s        | n/a       | 1.21 s | 0.18 s | 5.78 s |
+
+JavaScript is JIT-compiled by Node at run time, so it has no ahead-of-time
+binary or compile step.
 
 **Takeaways:**
 
@@ -99,6 +106,10 @@ Best of 3 runs on the [test system](#test-system) below (lower is better).
   and ships the **smallest binary** (0.2 MB).
 - **Rust compiles fastest here** (single-file `rustc -O`, 0.18 s), while Zig's
   full `ReleaseFast` LLVM pipeline is the slowest to build.
+- **JavaScript (Node V8) is more competitive than expected** on the hot numeric
+  loops — `matmul`, `sieve` and `mandelbrot` land within a few× of native — but
+  pays for it on recursion (`fib`, ~3× slower), on `sort` (`BigInt` overhead),
+  and on memory (a ~45 MB+ runtime floor regardless of workload).
 
 Numbers are machine-specific — re-run `./bench.sh` for your own hardware. The
 Jai numbers reflect **OpenJai 0.1.0**, not the official Jai compiler (see notes
@@ -107,12 +118,13 @@ below).
 ## Reproducibility notes
 
 - **Jai** is built with `-release`.
+- **JavaScript** runs on **Node.js** (no build step; V8 JIT-compiles at startup).
 - **Odin** is built with `-o:speed`.
 - **Rust** is built with `rustc -O` (single file, no Cargo).
 - **Zig** is built with `-O ReleaseFast` (LLVM backend, full optimization).
 - Time is the **best** of `RUNS` runs (least affected by OS noise); memory is the
   **peak** resident set size reported by `/usr/bin/time -l`.
-- All four produce identical checksums, so the comparison reflects code
+- All five produce identical checksums, so the comparison reflects code
   generation and runtime, not different algorithms.
 
 ## Test system
@@ -126,6 +138,7 @@ The numbers in this repo were produced on:
 | Memory | 64 GB |
 | OS | macOS 15.7.7 (build 24G720) |
 | Jai | OpenJai 0.1.0 (`-release`) |
+| JavaScript | Node.js v24.7.0 (V8) |
 | Odin | dev-2024-04-nightly (`-o:speed`) |
 | Rust | 1.90.0 (`rustc -O`) |
 | Zig | 0.16.0 (LLVM backend, `-O ReleaseFast`) |
@@ -139,7 +152,7 @@ The Jai toolchain here is **[OpenJai](https://github.com/withlang-dev/open-jai)*
 an MIT-licensed clean-room Jai-compatible compiler — a separate project from the
 official (closed-beta) Jai compiler. While writing the suite I hit three
 behaviours in this build that differ from the LLVM-backed languages and had to
-be worked around so all four compute identical results. They're documented
+be worked around so all five compute identical results. They're documented
 inline in `main.jai`:
 
 1. **First call to a recursive, value-returning function miscompiles to `0`.**
@@ -152,7 +165,7 @@ inline in `main.jai`:
    other languages.
 3. **`u64` right shift is arithmetic** (sign-extending) rather than logical.
 
-To keep the `sort` benchmark identical across all four languages, it uses an LCG
+To keep the `sort` benchmark identical across all five languages, it uses an LCG
 (multiply + add only, which is bit-identical everywhere) instead of an xorshift
 (which relies on logical `>>`), and masks each sort key's high bit with bitwise
 `&` (sign-independent). `u64` *arithmetic* (add/multiply/xor with wraparound) is
