@@ -16,10 +16,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-ZIG="${ZIG:-/Users/marius/Dev/zig-0.16.0/zig}"
-JAI="${JAI:-/Users/marius/Dev/jai/bin/jai}"
+# Defaults assume each tool is on your PATH. Override any of them with an env
+# var if yours lives elsewhere, e.g. ZIG=/opt/zig/zig ./bench.sh
+ZIG="${ZIG:-zig}"
+JAI="${JAI:-jai}"
 RUSTC="${RUSTC:-rustc}"
-ODIN="${ODIN:-/Users/marius/Dev/odin-dev-2024-04a/odin}"
+ODIN="${ODIN:-odin}"
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
 NODE="${NODE:-node}"
