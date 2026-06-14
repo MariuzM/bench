@@ -1,11 +1,11 @@
-# Jai vs JavaScript vs Odin vs Rust vs Zig benchmarks
+# C vs C++ vs Jai vs JavaScript vs Odin vs Rust vs Zig benchmarks
 
-A small head-to-head benchmark suite comparing **Jai**, **JavaScript** (Node.js),
-**Odin**, **Rust** and **Zig** on runtime speed, peak memory, binary size and
-compile time. The same six workloads are implemented in each language; a build
-script compiles the four native suites (and launches the JavaScript suite under
-Node), runs every benchmark under `/usr/bin/time`, and prints a side-by-side
-table.
+A small head-to-head benchmark suite comparing **C**, **C++**, **Jai**,
+**JavaScript** (Node.js), **Odin**, **Rust** and **Zig** on runtime speed, peak
+memory, binary size and compile time. The same six workloads are implemented in
+each language; a build script compiles the six native suites (and launches the
+JavaScript suite under Node), runs every benchmark under `/usr/bin/time`, and
+prints a side-by-side table.
 
 > ⚠️ **This is not the official Jai compiler.** The Jai side is built with
 > **OpenJai**, an MIT-licensed clean-room Jai-compatible compiler — *not*
@@ -18,12 +18,14 @@ table.
 
 | File         | What it is                                                        |
 | ------------ | ----------------------------------------------------------------- |
-| `main.jai`   | All six benchmarks; runs one, chosen by a command-line argument.  |
+| `main.c`     | All six benchmarks; runs one, chosen by a command-line argument.  |
+| `main.cpp`   | The same six benchmarks in C++.                                   |
+| `main.jai`   | The same six benchmarks in Jai.                                  |
 | `main.js`    | The same six benchmarks in JavaScript (run with Node.js).         |
 | `main.odin`  | The same six benchmarks in Odin.                                  |
 | `main.rs`    | The same six benchmarks in Rust.                                  |
 | `main.zig`   | The same six benchmarks in Zig.                                   |
-| `bench.sh`   | Builds/launches all five, times each benchmark, prints the table. |
+| `bench.sh`   | Builds/launches all seven, times each benchmark, prints the table.|
 
 Each program runs exactly one benchmark per process (`./prog fib`,
 `./prog sieve`, …) so peak memory is measured in isolation.
@@ -39,11 +41,12 @@ Each program runs exactly one benchmark per process (`./prog fib`,
 | `sieve`      | Memory-bound streaming over a 50M-byte array.              |
 | `sort`       | Quicksort of 3,000,000 integers (compute + memory).        |
 
-Every benchmark prints a `checksum` line. All five languages must produce the
+Every benchmark prints a `checksum` line. All seven languages must produce the
 **same** checksum — that's how the script proves everyone did identical work
 before comparing their timings. JavaScript uses `BigInt` for the `sort`
 benchmark's 64-bit wrapping arithmetic so it stays bit-identical with the
-native builds.
+native builds. C and C++ are built with `-ffp-contract=off` so the `mandelbrot`
+float math doesn't fuse into FMA (which would diverge from the other backends).
 
 ## Running
 
@@ -55,7 +58,7 @@ Useful overrides:
 
 ```sh
 RUNS=10 ./bench.sh                 # more repeats (best wall-time is kept)
-JAI=/path/to/jai ODIN=/path/to/odin RUSTC=/path/to/rustc ZIG=/path/to/zig NODE=/path/to/node ./bench.sh
+CC=/path/to/cc CXX=/path/to/c++ JAI=/path/to/jai ODIN=/path/to/odin RUSTC=/path/to/rustc ZIG=/path/to/zig NODE=/path/to/node ./bench.sh
 ```
 
 Output reports, per benchmark, the best-of-N wall time and peak resident memory
@@ -67,52 +70,56 @@ Best of 3 runs on the [test system](#test-system) below (lower is better).
 
 ### Wall-clock time (seconds)
 
-| benchmark    |  jai |   js | odin | rust |  zig | fastest       |
-| ------------ | ---: | ---: | ---: | ---: | ---: | ------------- |
-| `collatz`    | 0.43 | 6.47 | 0.42 | 0.42 | 0.42 | odin/rust/zig |
-| `fib`        | 2.07 | 6.72 | 2.15 | 2.13 | 2.13 | jai           |
-| `mandelbrot` | 0.47 | 0.50 | 0.46 | 0.46 | 0.46 | odin/rust/zig |
-| `matmul`     | 3.83 | 0.21 | 0.06 | 0.04 | 0.04 | rust/zig      |
-| `sieve`      | 1.68 | 0.21 | 0.10 | 0.10 | 0.13 | odin/rust     |
-| `sort`       | 0.26 | 0.50 | 0.20 | 0.20 | 0.20 | odin/rust/zig |
+| benchmark    |    c |  cpp |  jai |   js | odin | rust |  zig | fastest |
+| ------------ | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ------- |
+| `collatz`    | 0.43 | 0.43 | 0.43 | 6.54 | 0.42 | 0.42 | 0.42 | odin/rust/zig |
+| `fib`        | 2.06 | 2.07 | 2.07 | 6.73 | 2.12 | 2.13 | 2.13 | c       |
+| `mandelbrot` | 0.46 | 0.46 | 0.46 | 0.51 | 0.47 | 0.46 | 0.46 | c/cpp/jai/rust/zig |
+| `matmul`     | 0.04 | 0.04 | 3.80 | 0.21 | 0.06 | 0.04 | 0.04 | c/cpp/rust/zig |
+| `sieve`      | 0.10 | 0.10 | 1.66 | 0.21 | 0.10 | 0.10 | 0.13 | c/cpp/odin/rust |
+| `sort`       | 0.20 | 0.20 | 0.26 | 0.50 | 0.20 | 0.21 | 0.20 | c/cpp/odin/zig |
 
 ### Peak memory (MB)
 
-| benchmark    |  jai |   js | odin | rust |  zig | leanest |
-| ------------ | ---: | ---: | ---: | ---: | ---: | ------- |
-| `collatz`    |  1.6 | 45.8 |  1.2 |  1.2 |  1.3 | odin    |
-| `fib`        |  1.5 | 44.9 |  1.1 |  1.2 |  1.2 | odin    |
-| `mandelbrot` |  1.5 | 47.4 |  1.1 |  1.2 |  1.2 | odin    |
-| `matmul`     |  7.7 | 50.3 |  7.2 |  7.3 |  7.3 | odin    |
-| `sieve`      | 49.3 | 93.9 | 48.8 | 48.9 | 48.9 | odin    |
-| `sort`       | 24.5 | 72.0 | 24.0 | 24.1 | 24.1 | odin    |
+| benchmark    |    c |  cpp |  jai |   js | odin | rust |  zig | leanest |
+| ------------ | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ------- |
+| `collatz`    |  1.0 |  1.0 |  1.6 | 45.9 |  1.1 |  1.2 |  1.2 | c       |
+| `fib`        |  1.0 |  1.0 |  1.5 | 44.7 |  1.1 |  1.3 |  1.3 | c       |
+| `mandelbrot` |  1.0 |  1.1 |  1.5 | 47.9 |  1.1 |  1.2 |  1.2 | c       |
+| `matmul`     |  7.1 |  7.1 |  7.6 | 49.9 |  7.2 |  7.3 |  7.3 | c       |
+| `sieve`      | 48.7 | 48.8 | 49.3 | 93.9 | 48.8 | 48.9 | 48.9 | c       |
+| `sort`       | 23.9 | 24.0 | 24.5 | 72.2 | 24.0 | 24.1 | 24.1 | c       |
 
 ### Binary size & compile time
 
-| metric       | jai (OpenJai) | js (Node) | odin   | rust   | zig    |
-| ------------ | ------------- | --------- | ------ | ------ | ------ |
-| binary size  | 4.6 MB        | n/a       | 0.2 MB | 0.4 MB | 0.4 MB |
-| compile time | 1.10 s        | n/a       | 1.21 s | 0.18 s | 5.78 s |
+| metric       | c       | cpp     | jai (OpenJai) | js (Node) | odin   | rust   | zig    |
+| ------------ | ------- | ------- | ------------- | --------- | ------ | ------ | ------ |
+| binary size  | 0.03 MB | 0.04 MB | 4.6 MB        | n/a       | 0.2 MB | 0.4 MB | 0.4 MB |
+| compile time | 0.08 s  | 0.40 s  | 1.12 s        | n/a       | 1.21 s | 0.18 s | 5.83 s |
 
 JavaScript is JIT-compiled by Node at run time, so it has no ahead-of-time
 binary or compile step.
 
 **Takeaways:**
 
-- **Odin, Rust and Zig are effectively tied** on the LLVM-backed workloads.
-  They share the same code-generation backend, so `collatz`, `fib`,
-  `mandelbrot`, `matmul` and `sort` land within noise of each other.
-- Odin, Rust and Zig **auto-vectorize the tight integer loops** (`matmul`,
-  `sieve`); OpenJai 0.1.0 does *not*, so it is ~95× slower on `matmul` and
-  ~13–17× slower on `sieve`.
+- **C, C++, Odin, Rust and Zig are effectively tied** on the LLVM-backed
+  workloads. They share the same code-generation backend (Clang/LLVM for C/C++),
+  so `collatz`, `fib`, `mandelbrot`, `matmul` and `sort` land within noise of
+  each other.
+- C, C++, Odin, Rust and Zig **auto-vectorize the tight integer loops**
+  (`matmul`, `sieve`); OpenJai 0.1.0 does *not*, so it is ~95× slower on
+  `matmul` and ~13–17× slower on `sieve`.
 - **`collatz` is where OpenJai catches up** (0.43 vs 0.42 s): its branchy,
   scalar, divide-heavy inner loop has no vectorizable structure, so the LLVM
   backends have no advantage to exploit. It's a good counterweight to `matmul`
   and `sieve`.
-- **Odin is consistently the leanest on peak memory** (a fraction of a MB ahead)
-  and ships the **smallest binary** (0.2 MB).
-- **Rust compiles fastest here** (single-file `rustc -O`, 0.18 s), while Zig's
-  full `ReleaseFast` LLVM pipeline is the slowest to build.
+- **C is consistently the leanest on peak memory** — it has essentially no
+  runtime, so it sits a fraction of a MB below everything else on every
+  workload. C and C++ also ship the **smallest binaries** (~0.03–0.04 MB,
+  single-file `-O3` with no static libc bloat).
+- **C compiles fastest here** (single-file `cc -O3`, 0.08 s); C++ pays a little
+  for `<iostream>`/`<vector>` template instantiation (0.40 s), while Zig's full
+  `ReleaseFast` LLVM pipeline is the slowest to build.
 - **JavaScript (Node V8) is more competitive than expected** on the hot numeric
   loops — `matmul`, `sieve` and `mandelbrot` land within a few× of native — but
   pays heavily on the branchy/recursive workloads (`collatz` and `fib`, both
@@ -125,6 +132,8 @@ below).
 
 ## Reproducibility notes
 
+- **C** is built with `cc -O3 -march=native -ffp-contract=off` (single file).
+- **C++** is built with `c++ -O3 -march=native -ffp-contract=off -std=c++17`.
 - **Jai** is built with `-release`.
 - **JavaScript** runs on **Node.js** (no build step; V8 JIT-compiles at startup).
 - **Odin** is built with `-o:speed`.
@@ -132,7 +141,7 @@ below).
 - **Zig** is built with `-O ReleaseFast` (LLVM backend, full optimization).
 - Time is the **best** of `RUNS` runs (least affected by OS noise); memory is the
   **peak** resident set size reported by `/usr/bin/time -l`.
-- All five produce identical checksums, so the comparison reflects code
+- All seven produce identical checksums, so the comparison reflects code
   generation and runtime, not different algorithms.
 
 ## Test system
@@ -145,6 +154,7 @@ The numbers in this repo were produced on:
 | CPU | Apple M1 Max (10 cores), arm64 |
 | Memory | 64 GB |
 | OS | macOS 15.7.7 (build 24G720) |
+| C / C++ | Apple Clang 17.0.0 (`-O3 -march=native -ffp-contract=off`) |
 | Jai | OpenJai 0.1.0 (`-release`) |
 | JavaScript | Node.js v24.7.0 (V8) |
 | Odin | dev-2024-04-nightly (`-o:speed`) |

@@ -9,7 +9,7 @@
 # JavaScript is interpreted/JIT-compiled by Node at run time, so it has no
 # ahead-of-time binary or compile step (shown as "n/a" in those rows).
 #
-# Env overrides: JAI, ODIN, RUSTC, ZIG (compiler paths), NODE (runtime),
+# Env overrides: CC, CXX, JAI, ODIN, RUSTC, ZIG (compiler paths), NODE (runtime),
 # RUNS (timed repeats). Written for bash 3.2 (macOS default), so it uses
 # indirect variable references instead of associative arrays.
 
@@ -20,10 +20,12 @@ ZIG="${ZIG:-/Users/marius/Dev/zig-0.16.0/zig}"
 JAI="${JAI:-/Users/marius/Dev/jai/bin/jai}"
 RUSTC="${RUSTC:-rustc}"
 ODIN="${ODIN:-/Users/marius/Dev/odin-dev-2024-04a/odin}"
+CC="${CC:-cc}"
+CXX="${CXX:-c++}"
 NODE="${NODE:-node}"
 RUNS="${RUNS:-3}"
 BENCHMARKS=(collatz fib mandelbrot matmul sieve sort)
-LANGS=(jai js odin rust zig)
+LANGS=(c cpp jai js odin rust zig)
 
 BIN="$ROOT/bin"
 mkdir -p "$BIN"
@@ -78,7 +80,17 @@ min_lang() {
 
 # --- build -----------------------------------------------------------------
 
-echo "Building (Jai release / Odin -o:speed / Rust -O / Zig ReleaseFast; JS = Node)..."
+echo "Building (C -O3 / C++ -O3 / Jai release / Odin -o:speed / Rust -O / Zig ReleaseFast; JS = Node)..."
+
+# -ffp-contract=off keeps mandelbrot's float math bit-identical with the other
+# LLVM backends, which don't fuse multiply-add by default.
+BINOF_c="$BIN/c_bench"
+BUILD_c=$(/usr/bin/time -p "$CC" -O3 -march=native -ffp-contract=off "$ROOT/main.c" \
+  -o "$BINOF_c" 2>&1 | awk '/real/ {print $2; exit}')
+
+BINOF_cpp="$BIN/cpp_bench"
+BUILD_cpp=$(/usr/bin/time -p "$CXX" -O3 -march=native -ffp-contract=off -std=c++17 "$ROOT/main.cpp" \
+  -o "$BINOF_cpp" 2>&1 | awk '/real/ {print $2; exit}')
 
 BINOF_zig="$BIN/zig_bench"
 BUILD_zig=$(/usr/bin/time -p "$ZIG" build-exe "$ROOT/main.zig" -O ReleaseFast \
