@@ -325,6 +325,238 @@ bench_raster :: proc() {
 	fmt.printf("checksum %d\n", checksum)
 }
 
+// --- pointer-chasing (random memory latency) --------------------------------
+// Builds one big random permutation cycle, then chases next[p] for many hops.
+// Each load depends on the previous one, so the prefetcher can't hide it: this
+// measures memory *latency*, unlike the streaming `sieve`. Pure 32-bit integer.
+
+bench_ptrchase :: proc() {
+	N :: 16000000
+	HOPS :: 4000000
+	order := make([]u32, N)
+	next := make([]u32, N)
+	defer delete(order)
+	defer delete(next)
+	for i := 0; i < N; i += 1 do order[i] = u32(i)
+	x: u32 = 1
+	for i := N - 1; i >= 1; i -= 1 {
+		x = x * 1664525 + 1013904223
+		j := int((x & 0x7FFFFFFF) % (u32(i) + 1))
+		t := order[i]
+		order[i] = order[j]
+		order[j] = t
+	}
+	for k := 0; k < N; k += 1 do next[int(order[k])] = order[(k + 1) % N]
+	sum: u32 = 0
+	p: u32 = 0
+	for h := 0; h < HOPS; h += 1 {
+		p = next[int(p)]
+		sum += p
+	}
+	fmt.printf("checksum %d\n", sum)
+}
+
+// --- FNV-1a hash ------------------------------------------------------------
+// Hashes a byte buffer several times with 32-bit FNV-1a. Stresses the integer
+// ALU (xor + wrapping multiply) and a tight sequential read; no SIMD to exploit.
+
+bench_hash :: proc() {
+	N :: 32000000
+	R :: 4
+	buf := make([]u8, N)
+	defer delete(buf)
+	x: u32 = 12345
+	for i := 0; i < N; i += 1 {
+		x = x * 1664525 + 1013904223
+		buf[i] = u8(x & 0xFF)
+	}
+	h: u32 = 2166136261
+	for r := 0; r < R; r += 1 {
+		for i := 0; i < N; i += 1 {
+			h ~= u32(buf[i])
+			h *= 16777619
+		}
+	}
+	fmt.printf("checksum %d\n", h)
+}
+
+// --- binary search tree (heap allocation + pointer chasing) -----------------
+// Inserts M keys into a BST (one heap allocation per node, branchy descent),
+// then runs Q lookups. Measures allocator/GC throughput plus pointer-chasing
+// reads. Keys stay below 2^31 so signed/unsigned ordering agree everywhere.
+
+BstNode :: struct {
+	key:   u32,
+	left:  ^BstNode,
+	right: ^BstNode,
+}
+
+bench_bst :: proc() {
+	M :: 1000000
+	Q :: 1000000
+	root: ^BstNode = nil
+	x: u32 = 22222
+	for n := 0; n < M; n += 1 {
+		x = x * 1664525 + 1013904223
+		key := x & 0x7FFFFFFF
+		nn := new(BstNode)
+		nn.key = key
+		if root == nil {
+			root = nn
+			continue
+		}
+		cur := root
+		for {
+			if key < cur.key {
+				if cur.left == nil {
+					cur.left = nn
+					break
+				}
+				cur = cur.left
+			} else {
+				if cur.right == nil {
+					cur.right = nn
+					break
+				}
+				cur = cur.right
+			}
+		}
+	}
+	y: u32 = 99991
+	cs: u32 = 0
+	for q := 0; q < Q; q += 1 {
+		y = y * 1664525 + 1013904223
+		key := y & 0x7FFFFFFF
+		steps: u32 = 0
+		cur := root
+		for cur != nil {
+			steps += 1
+			if key == cur.key do break
+			if key < cur.key do cur = cur.left
+			else do cur = cur.right
+		}
+		cs = cs * 1000003 + steps
+	}
+	fmt.printf("checksum %d\n", cs)
+}
+
+// --- run-length encoding (branchy byte processing) --------------------------
+// Builds a buffer of random runs, then RLE-encodes it several times, folding
+// the (count,value) output into a 32-bit hash. Data-dependent branchy scan.
+
+bench_rle :: proc() {
+	N :: 40000000
+	R :: 4
+	buf := make([]u8, N)
+	out := make([]u8, 2 * N)
+	defer delete(buf)
+	defer delete(out)
+	x: u32 = 33333
+	i := 0
+	for i < N {
+		x = x * 1664525 + 1013904223
+		v := u8(x & 0xFF)
+		rl := ((x & 0x7FFFFFFF) % 16) + 1
+		c: u32 = 0
+		for c < rl && i < N {
+			buf[i] = v
+			i += 1
+			c += 1
+		}
+	}
+	h: u32 = 2166136261
+	for r := 0; r < R; r += 1 {
+		o := 0
+		p := 0
+		for p < N {
+			v := buf[p]
+			run := 1
+			for p + run < N && buf[p + run] == v && run < 255 do run += 1
+			out[o] = u8(run)
+			out[o + 1] = v
+			o += 2
+			p += run
+		}
+		for k := 0; k < o; k += 1 {
+			h ~= u32(out[k])
+			h *= 16777619
+		}
+		h ~= u32(o % 256);          h *= 16777619
+		h ~= u32((o / 256) % 256);  h *= 16777619
+		h ~= u32((o / 65536) % 256); h *= 16777619
+		h ~= u32((o / 16777216) % 256); h *= 16777619
+	}
+	fmt.printf("checksum %d\n", h)
+}
+
+// --- base64 encoding (table lookup + bit shuffling) -------------------------
+// Base64-encodes a byte buffer several times, folding the output characters
+// into a 32-bit hash. Uses division (not >>) so every language agrees bit for
+// bit. Stresses byte-level bit manipulation and a small gather/table lookup.
+
+bench_base64 :: proc() {
+	N :: 24000000
+	R :: 4
+	b64 := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	buf := make([]u8, N)
+	defer delete(buf)
+	x: u32 = 44444
+	for i := 0; i < N; i += 1 {
+		x = x * 1664525 + 1013904223
+		buf[i] = u8(x & 0xFF)
+	}
+	h: u32 = 2166136261
+	for r := 0; r < R; r += 1 {
+		for i := 0; i + 2 < N; i += 3 {
+			b0 := u32(buf[i])
+			b1 := u32(buf[i + 1])
+			b2 := u32(buf[i + 2])
+			i0 := b0 / 4
+			i1 := (b0 & 3) * 16 + b1 / 16
+			i2 := (b1 & 15) * 4 + b2 / 64
+			i3 := b2 & 63
+			h ~= u32(b64[int(i0)]); h *= 16777619
+			h ~= u32(b64[int(i1)]); h *= 16777619
+			h ~= u32(b64[int(i2)]); h *= 16777619
+			h ~= u32(b64[int(i3)]); h *= 16777619
+		}
+	}
+	fmt.printf("checksum %d\n", h)
+}
+
+// --- indirect dispatch ------------------------------------------------------
+// Applies a stream of ops to an accumulator through a proc-pointer table, one
+// indirect call per element. Stresses indirect-branch prediction. All ops are
+// 32-bit wrapping + ^ * - so the result is identical across languages.
+
+op_add :: proc(a, b: u32) -> u32 {return a + b}
+op_xor :: proc(a, b: u32) -> u32 {return a ~ b}
+op_mul :: proc(a, b: u32) -> u32 {return a * (b | 1)}
+op_sub :: proc(a, b: u32) -> u32 {return a - b}
+
+bench_dispatch :: proc() {
+	N :: 4000000
+	R :: 32
+	code := make([]u8, N)
+	operand := make([]u32, N)
+	defer delete(code)
+	defer delete(operand)
+	x: u32 = 55555
+	for i := 0; i < N; i += 1 {
+		x = x * 1664525 + 1013904223
+		code[i] = u8((x & 0x7FFFFFFF) % 4)
+		operand[i] = x
+	}
+	fns := [4]proc(_: u32, _: u32) -> u32{op_add, op_xor, op_mul, op_sub}
+	acc: u32 = 2166136261
+	for r := 0; r < R; r += 1 {
+		for i := 0; i < N; i += 1 {
+			acc = fns[int(code[i])](acc, operand[i])
+		}
+	}
+	fmt.printf("checksum %d\n", acc)
+}
+
 bench_collatz :: proc() {
 	N :: 3_000_000
 	total: u64 = 0
@@ -365,6 +597,18 @@ main :: proc() {
 		bench_collatz()
 	case "raster":
 		bench_raster()
+	case "ptrchase":
+		bench_ptrchase()
+	case "hash":
+		bench_hash()
+	case "bst":
+		bench_bst()
+	case "rle":
+		bench_rle()
+	case "base64":
+		bench_base64()
+	case "dispatch":
+		bench_dispatch()
 	case:
 		fmt.printf("unknown benchmark: %s\n", name)
 	}

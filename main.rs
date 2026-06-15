@@ -357,6 +357,256 @@ fn bench_raster() {
     println!("checksum {}", checksum);
 }
 
+// --- pointer-chasing (random memory latency) --------------------------------
+// Builds one big random permutation cycle, then chases next[p] for many hops.
+// Each load depends on the previous one, so the prefetcher can't hide it: this
+// measures memory *latency*, unlike the streaming `sieve`. Pure 32-bit integer.
+
+fn bench_ptrchase() {
+    const N: usize = 16000000;
+    const HOPS: u64 = 4000000;
+    let mut order = vec![0u32; N];
+    let mut next = vec![0u32; N];
+    for i in 0..N {
+        order[i] = i as u32;
+    }
+    let mut x: u32 = 1;
+    for i in (1..N).rev() {
+        x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+        let j = ((x & 0x7FFFFFFF) % (i as u32 + 1)) as usize;
+        order.swap(i, j);
+    }
+    for k in 0..N {
+        next[order[k] as usize] = order[(k + 1) % N];
+    }
+    let mut sum: u32 = 0;
+    let mut p: u32 = 0;
+    for _ in 0..HOPS {
+        p = next[p as usize];
+        sum = sum.wrapping_add(p);
+    }
+    println!("checksum {}", sum);
+}
+
+// --- FNV-1a hash ------------------------------------------------------------
+// Hashes a byte buffer several times with 32-bit FNV-1a. Stresses the integer
+// ALU (xor + wrapping multiply) and a tight sequential read; no SIMD to exploit.
+
+fn bench_hash() {
+    const N: usize = 32000000;
+    const R: usize = 4;
+    let mut buf = vec![0u8; N];
+    let mut x: u32 = 12345;
+    for i in 0..N {
+        x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+        buf[i] = (x & 0xFF) as u8;
+    }
+    let mut h: u32 = 2166136261;
+    for _ in 0..R {
+        for i in 0..N {
+            h ^= buf[i] as u32;
+            h = h.wrapping_mul(16777619);
+        }
+    }
+    println!("checksum {}", h);
+}
+
+// --- binary search tree (heap allocation + pointer chasing) -----------------
+// Inserts M keys into a BST (one heap allocation per node, branchy descent),
+// then runs Q lookups. Measures allocator/GC throughput plus pointer-chasing
+// reads. Keys stay below 2^31 so signed/unsigned ordering agree everywhere.
+
+struct BstNode {
+    key: u32,
+    left: Option<Box<BstNode>>,
+    right: Option<Box<BstNode>>,
+}
+
+fn bench_bst() {
+    const M: usize = 1000000;
+    const Q: usize = 1000000;
+    let mut root: Option<Box<BstNode>> = None;
+    let mut x: u32 = 22222;
+    for _ in 0..M {
+        x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+        let key = x & 0x7FFFFFFF;
+        let mut cur = &mut root;
+        loop {
+            match cur {
+                None => {
+                    *cur = Some(Box::new(BstNode {
+                        key,
+                        left: None,
+                        right: None,
+                    }));
+                    break;
+                }
+                Some(node) => {
+                    if key < node.key {
+                        cur = &mut node.left;
+                    } else {
+                        cur = &mut node.right;
+                    }
+                }
+            }
+        }
+    }
+    let mut y: u32 = 99991;
+    let mut cs: u32 = 0;
+    for _ in 0..Q {
+        y = y.wrapping_mul(1664525).wrapping_add(1013904223);
+        let key = y & 0x7FFFFFFF;
+        let mut steps: u32 = 0;
+        let mut cur = &root;
+        while let Some(node) = cur {
+            steps = steps.wrapping_add(1);
+            if key == node.key {
+                break;
+            }
+            if key < node.key {
+                cur = &node.left;
+            } else {
+                cur = &node.right;
+            }
+        }
+        cs = cs.wrapping_mul(1000003).wrapping_add(steps);
+    }
+    println!("checksum {}", cs);
+}
+
+// --- run-length encoding (branchy byte processing) --------------------------
+// Builds a buffer of random runs, then RLE-encodes it several times, folding
+// the (count,value) output into a 32-bit hash. Data-dependent branchy scan.
+
+fn bench_rle() {
+    const N: usize = 40000000;
+    const R: usize = 4;
+    let mut buf = vec![0u8; N];
+    let mut out = vec![0u8; 2 * N];
+    let mut x: u32 = 33333;
+    let mut i: usize = 0;
+    while i < N {
+        x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+        let v = (x & 0xFF) as u8;
+        let rl = ((x & 0x7FFFFFFF) % 16) + 1;
+        let mut c: u32 = 0;
+        while c < rl && i < N {
+            buf[i] = v;
+            i += 1;
+            c += 1;
+        }
+    }
+    let mut h: u32 = 2166136261;
+    for _ in 0..R {
+        let mut o: usize = 0;
+        let mut p: usize = 0;
+        while p < N {
+            let v = buf[p];
+            let mut run: usize = 1;
+            while p + run < N && buf[p + run] == v && run < 255 {
+                run += 1;
+            }
+            out[o] = run as u8;
+            out[o + 1] = v;
+            o += 2;
+            p += run;
+        }
+        for k in 0..o {
+            h ^= out[k] as u32;
+            h = h.wrapping_mul(16777619);
+        }
+        h ^= (o % 256) as u32;
+        h = h.wrapping_mul(16777619);
+        h ^= ((o / 256) % 256) as u32;
+        h = h.wrapping_mul(16777619);
+        h ^= ((o / 65536) % 256) as u32;
+        h = h.wrapping_mul(16777619);
+        h ^= ((o / 16777216) % 256) as u32;
+        h = h.wrapping_mul(16777619);
+    }
+    println!("checksum {}", h);
+}
+
+// --- base64 encoding (table lookup + bit shuffling) -------------------------
+// Base64-encodes a byte buffer several times, folding the output characters
+// into a 32-bit hash. Uses division (not >>) so every language agrees bit for
+// bit. Stresses byte-level bit manipulation and a small gather/table lookup.
+
+const B64: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+fn bench_base64() {
+    const N: usize = 24000000;
+    const R: usize = 4;
+    let mut buf = vec![0u8; N];
+    let mut x: u32 = 44444;
+    for i in 0..N {
+        x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+        buf[i] = (x & 0xFF) as u8;
+    }
+    let mut h: u32 = 2166136261;
+    for _ in 0..R {
+        let mut i: usize = 0;
+        while i + 2 < N {
+            let b0 = buf[i] as u32;
+            let b1 = buf[i + 1] as u32;
+            let b2 = buf[i + 2] as u32;
+            let i0 = b0 / 4;
+            let i1 = (b0 & 3) * 16 + b1 / 16;
+            let i2 = (b1 & 15) * 4 + b2 / 64;
+            let i3 = b2 & 63;
+            h ^= B64[i0 as usize] as u32;
+            h = h.wrapping_mul(16777619);
+            h ^= B64[i1 as usize] as u32;
+            h = h.wrapping_mul(16777619);
+            h ^= B64[i2 as usize] as u32;
+            h = h.wrapping_mul(16777619);
+            h ^= B64[i3 as usize] as u32;
+            h = h.wrapping_mul(16777619);
+            i += 3;
+        }
+    }
+    println!("checksum {}", h);
+}
+
+// --- indirect dispatch ------------------------------------------------------
+// Applies a stream of ops to an accumulator through a function-pointer table,
+// one indirect call per element. Stresses indirect-branch prediction. All ops
+// are 32-bit wrapping + ^ * - so the result is identical across languages.
+
+fn op_add(a: u32, b: u32) -> u32 {
+    a.wrapping_add(b)
+}
+fn op_xor(a: u32, b: u32) -> u32 {
+    a ^ b
+}
+fn op_mul(a: u32, b: u32) -> u32 {
+    a.wrapping_mul(b | 1)
+}
+fn op_sub(a: u32, b: u32) -> u32 {
+    a.wrapping_sub(b)
+}
+
+fn bench_dispatch() {
+    const N: usize = 4000000;
+    const R: usize = 32;
+    let mut code = vec![0u8; N];
+    let mut operand = vec![0u32; N];
+    let mut x: u32 = 55555;
+    for i in 0..N {
+        x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+        code[i] = ((x & 0x7FFFFFFF) % 4) as u8;
+        operand[i] = x;
+    }
+    let fns: [fn(u32, u32) -> u32; 4] = [op_add, op_xor, op_mul, op_sub];
+    let mut acc: u32 = 2166136261;
+    for _ in 0..R {
+        for i in 0..N {
+            acc = fns[code[i] as usize](acc, operand[i]);
+        }
+    }
+    println!("checksum {}", acc);
+}
+
 fn bench_collatz() {
     const N: u64 = 3_000_000;
     let mut total: u64 = 0;
@@ -382,7 +632,7 @@ fn main() {
     let name = match env::args().nth(1) {
         Some(n) => n,
         None => {
-            println!("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster>");
+            println!("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster|ptrchase|hash|bst|rle|base64|dispatch>");
             return;
         }
     };
@@ -394,6 +644,12 @@ fn main() {
         "sort" => bench_sort(),
         "collatz" => bench_collatz(),
         "raster" => bench_raster(),
+        "ptrchase" => bench_ptrchase(),
+        "hash" => bench_hash(),
+        "bst" => bench_bst(),
+        "rle" => bench_rle(),
+        "base64" => bench_base64(),
+        "dispatch" => bench_dispatch(),
         _ => println!("unknown benchmark: {}", name),
     }
 }

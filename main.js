@@ -318,6 +318,234 @@ function benchRaster() {
   console.log("checksum " + checksum.toString());
 }
 
+// --- pointer-chasing (random memory latency) --------------------------------
+// Builds one big random permutation cycle, then chases next[p] for many hops.
+// Each load depends on the previous one, so the prefetcher can't hide it: this
+// measures memory *latency*, unlike the streaming `sieve`. All 32-bit, so it
+// uses Math.imul/>>>0 instead of BigInt and stays bit-identical with native.
+
+function benchPtrchase() {
+  const N = 16000000;
+  const HOPS = 4000000;
+  const order = new Uint32Array(N);
+  const next = new Uint32Array(N);
+  for (let i = 0; i < N; i++) order[i] = i;
+  let x = 1;
+  for (let i = N - 1; i >= 1; i--) {
+    x = (Math.imul(x, 1664525) + 1013904223) >>> 0;
+    const j = (x & 0x7fffffff) % (i + 1);
+    const t = order[i];
+    order[i] = order[j];
+    order[j] = t;
+  }
+  for (let k = 0; k < N; k++) next[order[k]] = order[(k + 1) % N];
+  let sum = 0;
+  let p = 0;
+  for (let h = 0; h < HOPS; h++) {
+    p = next[p];
+    sum = (sum + p) >>> 0;
+  }
+  console.log("checksum " + (sum >>> 0));
+}
+
+// --- FNV-1a hash ------------------------------------------------------------
+// Hashes a byte buffer several times with 32-bit FNV-1a. Stresses the integer
+// ALU (xor + wrapping multiply) and a tight sequential read; no SIMD to exploit.
+
+function benchHash() {
+  const N = 32000000;
+  const R = 4;
+  const buf = new Uint8Array(N);
+  let x = 12345;
+  for (let i = 0; i < N; i++) {
+    x = (Math.imul(x, 1664525) + 1013904223) >>> 0;
+    buf[i] = x & 0xff;
+  }
+  let h = 2166136261;
+  for (let r = 0; r < R; r++) {
+    for (let i = 0; i < N; i++) {
+      h ^= buf[i];
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+  }
+  console.log("checksum " + (h >>> 0));
+}
+
+// --- binary search tree (heap allocation + pointer chasing) -----------------
+// Inserts M keys into a BST (one object allocation per node, branchy descent),
+// then runs Q lookups. Measures allocator/GC throughput plus pointer-chasing
+// reads. Keys stay below 2^31 so signed/unsigned ordering agree everywhere.
+
+function benchBst() {
+  const M = 1000000;
+  const Q = 1000000;
+  let root = null;
+  let x = 22222;
+  for (let n = 0; n < M; n++) {
+    x = (Math.imul(x, 1664525) + 1013904223) >>> 0;
+    const key = x & 0x7fffffff;
+    const nn = { key: key, left: null, right: null };
+    if (root === null) {
+      root = nn;
+      continue;
+    }
+    let cur = root;
+    for (;;) {
+      if (key < cur.key) {
+        if (cur.left === null) {
+          cur.left = nn;
+          break;
+        }
+        cur = cur.left;
+      } else {
+        if (cur.right === null) {
+          cur.right = nn;
+          break;
+        }
+        cur = cur.right;
+      }
+    }
+  }
+  let y = 99991;
+  let cs = 0;
+  for (let q = 0; q < Q; q++) {
+    y = (Math.imul(y, 1664525) + 1013904223) >>> 0;
+    const key = y & 0x7fffffff;
+    let steps = 0;
+    let cur = root;
+    while (cur !== null) {
+      steps++;
+      if (key === cur.key) break;
+      if (key < cur.key) cur = cur.left;
+      else cur = cur.right;
+    }
+    cs = (Math.imul(cs, 1000003) + steps) >>> 0;
+  }
+  console.log("checksum " + (cs >>> 0));
+}
+
+// --- run-length encoding (branchy byte processing) --------------------------
+// Builds a buffer of random runs, then RLE-encodes it several times, folding
+// the (count,value) output into a 32-bit hash. Data-dependent branchy scan.
+
+function benchRle() {
+  const N = 40000000;
+  const R = 4;
+  const buf = new Uint8Array(N);
+  const out = new Uint8Array(2 * N);
+  let x = 33333;
+  let i = 0;
+  while (i < N) {
+    x = (Math.imul(x, 1664525) + 1013904223) >>> 0;
+    const v = x & 0xff;
+    const rl = ((x & 0x7fffffff) % 16) + 1;
+    let c = 0;
+    while (c < rl && i < N) {
+      buf[i] = v;
+      i++;
+      c++;
+    }
+  }
+  let h = 2166136261;
+  for (let r = 0; r < R; r++) {
+    let o = 0;
+    let p = 0;
+    while (p < N) {
+      const v = buf[p];
+      let run = 1;
+      while (p + run < N && buf[p + run] === v && run < 255) run++;
+      out[o] = run;
+      out[o + 1] = v;
+      o += 2;
+      p += run;
+    }
+    for (let k = 0; k < o; k++) {
+      h ^= out[k];
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    h ^= o % 256;
+    h = Math.imul(h, 16777619) >>> 0;
+    h ^= Math.floor(o / 256) % 256;
+    h = Math.imul(h, 16777619) >>> 0;
+    h ^= Math.floor(o / 65536) % 256;
+    h = Math.imul(h, 16777619) >>> 0;
+    h ^= Math.floor(o / 16777216) % 256;
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  console.log("checksum " + (h >>> 0));
+}
+
+// --- base64 encoding (table lookup + bit shuffling) -------------------------
+// Base64-encodes a byte buffer several times, folding the output characters
+// into a 32-bit hash. Uses division (not >>) so every language agrees bit for
+// bit. Stresses byte-level bit manipulation and a small gather/table lookup.
+
+const B64 =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+function benchBase64() {
+  const N = 24000000;
+  const R = 4;
+  const buf = new Uint8Array(N);
+  let x = 44444;
+  for (let i = 0; i < N; i++) {
+    x = (Math.imul(x, 1664525) + 1013904223) >>> 0;
+    buf[i] = x & 0xff;
+  }
+  let h = 2166136261;
+  for (let r = 0; r < R; r++) {
+    for (let i = 0; i + 2 < N; i += 3) {
+      const b0 = buf[i];
+      const b1 = buf[i + 1];
+      const b2 = buf[i + 2];
+      const i0 = (b0 / 4) | 0;
+      const i1 = (b0 & 3) * 16 + ((b1 / 16) | 0);
+      const i2 = (b1 & 15) * 4 + ((b2 / 64) | 0);
+      const i3 = b2 & 63;
+      h ^= B64.charCodeAt(i0);
+      h = Math.imul(h, 16777619) >>> 0;
+      h ^= B64.charCodeAt(i1);
+      h = Math.imul(h, 16777619) >>> 0;
+      h ^= B64.charCodeAt(i2);
+      h = Math.imul(h, 16777619) >>> 0;
+      h ^= B64.charCodeAt(i3);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+  }
+  console.log("checksum " + (h >>> 0));
+}
+
+// --- indirect dispatch ------------------------------------------------------
+// Applies a stream of ops to an accumulator through an array of functions, one
+// indirect call per element. Stresses indirect-branch prediction (megamorphic
+// call sites for V8). All ops are 32-bit wrapping + ^ * - via Math.imul/>>>0.
+
+function benchDispatch() {
+  const N = 4000000;
+  const R = 32;
+  const code = new Uint8Array(N);
+  const operand = new Uint32Array(N);
+  let x = 55555;
+  for (let i = 0; i < N; i++) {
+    x = (Math.imul(x, 1664525) + 1013904223) >>> 0;
+    code[i] = (x & 0x7fffffff) % 4;
+    operand[i] = x;
+  }
+  const fns = [
+    (a, b) => (a + b) >>> 0,
+    (a, b) => (a ^ b) >>> 0,
+    (a, b) => Math.imul(a, b | 1) >>> 0,
+    (a, b) => (a - b) >>> 0,
+  ];
+  let acc = 2166136261;
+  for (let r = 0; r < R; r++) {
+    for (let i = 0; i < N; i++) {
+      acc = fns[code[i]](acc, operand[i]);
+    }
+  }
+  console.log("checksum " + (acc >>> 0));
+}
+
 function benchCollatz() {
   const N = 3_000_000;
   let total = 0;
@@ -342,7 +570,7 @@ function benchCollatz() {
 function main() {
   const name = process.argv[2];
   if (!name) {
-    console.log("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster>");
+    console.log("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster|ptrchase|hash|bst|rle|base64|dispatch>");
     return;
   }
   switch (name) {
@@ -366,6 +594,24 @@ function main() {
       break;
     case "raster":
       benchRaster();
+      break;
+    case "ptrchase":
+      benchPtrchase();
+      break;
+    case "hash":
+      benchHash();
+      break;
+    case "bst":
+      benchBst();
+      break;
+    case "rle":
+      benchRle();
+      break;
+    case "base64":
+      benchBase64();
+      break;
+    case "dispatch":
+      benchDispatch();
       break;
     default:
       console.log("unknown benchmark: " + name);

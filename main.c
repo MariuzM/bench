@@ -342,6 +342,257 @@ static void bench_raster(void) {
     free(zbuf);
 }
 
+// --- pointer-chasing (random memory latency) --------------------------------
+// Builds one big random permutation cycle, then chases next[p] for many hops.
+// Each load depends on the previous one, so the prefetcher can't hide it: this
+// measures memory *latency*, unlike the streaming `sieve`. Pure 32-bit integer.
+
+static void bench_ptrchase(void) {
+    const size_t N = 16000000;
+    const uint64_t HOPS = 4000000;
+    uint32_t *order = malloc(N * sizeof(uint32_t));
+    uint32_t *next = malloc(N * sizeof(uint32_t));
+    for (size_t i = 0; i < N; i++) {
+        order[i] = (uint32_t)i;
+    }
+    uint32_t x = 1;
+    for (size_t i = N - 1; i >= 1; i--) {
+        x = x * 1664525u + 1013904223u;
+        size_t j = (x & 0x7FFFFFFFu) % (i + 1);
+        uint32_t t = order[i];
+        order[i] = order[j];
+        order[j] = t;
+    }
+    for (size_t k = 0; k < N; k++) {
+        next[order[k]] = order[(k + 1) % N];
+    }
+    uint32_t sum = 0;
+    uint32_t p = 0;
+    for (uint64_t h = 0; h < HOPS; h++) {
+        p = next[p];
+        sum += p;
+    }
+    printf("checksum %u\n", sum);
+    free(order);
+    free(next);
+}
+
+// --- FNV-1a hash ------------------------------------------------------------
+// Hashes a byte buffer several times with 32-bit FNV-1a. Stresses the integer
+// ALU (xor + wrapping multiply) and a tight sequential read; no SIMD to exploit.
+
+static void bench_hash(void) {
+    const size_t N = 32000000;
+    const int R = 4;
+    uint8_t *buf = malloc(N);
+    uint32_t x = 12345;
+    for (size_t i = 0; i < N; i++) {
+        x = x * 1664525u + 1013904223u;
+        buf[i] = (uint8_t)(x & 0xFFu);
+    }
+    uint32_t h = 2166136261u;
+    for (int r = 0; r < R; r++) {
+        for (size_t i = 0; i < N; i++) {
+            h ^= buf[i];
+            h *= 16777619u;
+        }
+    }
+    printf("checksum %u\n", h);
+    free(buf);
+}
+
+// --- binary search tree (heap allocation + pointer chasing) -----------------
+// Inserts M keys into a BST (one heap allocation per node, branchy descent),
+// then runs Q lookups. Measures allocator/GC throughput plus pointer-chasing
+// reads. Keys stay below 2^31 so signed/unsigned ordering agree everywhere.
+
+typedef struct bst_node {
+    uint32_t key;
+    struct bst_node *left;
+    struct bst_node *right;
+} bst_node;
+
+static void bench_bst(void) {
+    const size_t M = 1000000;
+    const size_t Q = 1000000;
+    bst_node *root = NULL;
+    uint32_t x = 22222;
+    for (size_t n = 0; n < M; n++) {
+        x = x * 1664525u + 1013904223u;
+        uint32_t key = x & 0x7FFFFFFFu;
+        bst_node *nn = malloc(sizeof(bst_node));
+        nn->key = key;
+        nn->left = NULL;
+        nn->right = NULL;
+        if (root == NULL) {
+            root = nn;
+            continue;
+        }
+        bst_node *cur = root;
+        for (;;) {
+            if (key < cur->key) {
+                if (cur->left == NULL) {
+                    cur->left = nn;
+                    break;
+                }
+                cur = cur->left;
+            } else {
+                if (cur->right == NULL) {
+                    cur->right = nn;
+                    break;
+                }
+                cur = cur->right;
+            }
+        }
+    }
+    uint32_t y = 99991;
+    uint32_t cs = 0;
+    for (size_t q = 0; q < Q; q++) {
+        y = y * 1664525u + 1013904223u;
+        uint32_t key = y & 0x7FFFFFFFu;
+        uint32_t steps = 0;
+        bst_node *cur = root;
+        while (cur != NULL) {
+            steps += 1;
+            if (key == cur->key) {
+                break;
+            }
+            if (key < cur->key) {
+                cur = cur->left;
+            } else {
+                cur = cur->right;
+            }
+        }
+        cs = cs * 1000003u + steps;
+    }
+    printf("checksum %u\n", cs);
+}
+
+// --- run-length encoding (branchy byte processing) --------------------------
+// Builds a buffer of random runs, then RLE-encodes it several times, folding
+// the (count,value) output into a 32-bit hash. Data-dependent branchy scan.
+
+static void bench_rle(void) {
+    const size_t N = 40000000;
+    const int R = 4;
+    uint8_t *buf = malloc(N);
+    uint8_t *out = malloc(2 * N);
+    uint32_t x = 33333;
+    size_t i = 0;
+    while (i < N) {
+        x = x * 1664525u + 1013904223u;
+        uint8_t v = (uint8_t)(x & 0xFFu);
+        uint32_t rl = ((x & 0x7FFFFFFFu) % 16u) + 1u;
+        for (uint32_t c = 0; c < rl && i < N; c++) {
+            buf[i++] = v;
+        }
+    }
+    uint32_t h = 2166136261u;
+    for (int r = 0; r < R; r++) {
+        size_t o = 0;
+        size_t p = 0;
+        while (p < N) {
+            uint8_t v = buf[p];
+            size_t run = 1;
+            while (p + run < N && buf[p + run] == v && run < 255) {
+                run++;
+            }
+            out[o++] = (uint8_t)run;
+            out[o++] = v;
+            p += run;
+        }
+        for (size_t k = 0; k < o; k++) {
+            h ^= out[k];
+            h *= 16777619u;
+        }
+        h ^= (uint8_t)(o % 256);
+        h *= 16777619u;
+        h ^= (uint8_t)((o / 256) % 256);
+        h *= 16777619u;
+        h ^= (uint8_t)((o / 65536) % 256);
+        h *= 16777619u;
+        h ^= (uint8_t)((o / 16777216) % 256);
+        h *= 16777619u;
+    }
+    printf("checksum %u\n", h);
+    free(buf);
+    free(out);
+}
+
+// --- base64 encoding (table lookup + bit shuffling) -------------------------
+// Base64-encodes a byte buffer several times, folding the output characters
+// into a 32-bit hash. Uses division (not >>) so every language agrees bit for
+// bit. Stresses byte-level bit manipulation and a small gather/table lookup.
+
+static const char B64[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+static void bench_base64(void) {
+    const size_t N = 24000000;
+    const int R = 4;
+    uint8_t *buf = malloc(N);
+    uint32_t x = 44444;
+    for (size_t i = 0; i < N; i++) {
+        x = x * 1664525u + 1013904223u;
+        buf[i] = (uint8_t)(x & 0xFFu);
+    }
+    uint32_t h = 2166136261u;
+    for (int r = 0; r < R; r++) {
+        for (size_t i = 0; i + 2 < N; i += 3) {
+            uint32_t b0 = buf[i];
+            uint32_t b1 = buf[i + 1];
+            uint32_t b2 = buf[i + 2];
+            uint32_t i0 = b0 / 4;
+            uint32_t i1 = (b0 & 3) * 16 + b1 / 16;
+            uint32_t i2 = (b1 & 15) * 4 + b2 / 64;
+            uint32_t i3 = b2 & 63;
+            h ^= (uint8_t)B64[i0];
+            h *= 16777619u;
+            h ^= (uint8_t)B64[i1];
+            h *= 16777619u;
+            h ^= (uint8_t)B64[i2];
+            h *= 16777619u;
+            h ^= (uint8_t)B64[i3];
+            h *= 16777619u;
+        }
+    }
+    printf("checksum %u\n", h);
+    free(buf);
+}
+
+// --- indirect dispatch ------------------------------------------------------
+// Applies a stream of ops to an accumulator through a function-pointer table,
+// one indirect call per element. Stresses indirect-branch prediction. All ops
+// are 32-bit wrapping + ^ * - so the result is identical across languages.
+
+static uint32_t op_add(uint32_t a, uint32_t b) { return a + b; }
+static uint32_t op_xor(uint32_t a, uint32_t b) { return a ^ b; }
+static uint32_t op_mul(uint32_t a, uint32_t b) { return a * (b | 1u); }
+static uint32_t op_sub(uint32_t a, uint32_t b) { return a - b; }
+
+static void bench_dispatch(void) {
+    const size_t N = 4000000;
+    const int R = 32;
+    uint8_t *code = malloc(N);
+    uint32_t *operand = malloc(N * sizeof(uint32_t));
+    uint32_t x = 55555;
+    for (size_t i = 0; i < N; i++) {
+        x = x * 1664525u + 1013904223u;
+        code[i] = (uint8_t)((x & 0x7FFFFFFFu) % 4u);
+        operand[i] = x;
+    }
+    uint32_t (*fns[4])(uint32_t, uint32_t) = {op_add, op_xor, op_mul, op_sub};
+    uint32_t acc = 2166136261u;
+    for (int r = 0; r < R; r++) {
+        for (size_t i = 0; i < N; i++) {
+            acc = fns[code[i]](acc, operand[i]);
+        }
+    }
+    printf("checksum %u\n", acc);
+    free(code);
+    free(operand);
+}
+
 static void bench_collatz(void) {
     const uint64_t N = 3000000;
     uint64_t total = 0;
@@ -363,7 +614,7 @@ static void bench_collatz(void) {
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        printf("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster>\n");
+        printf("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster|ptrchase|hash|bst|rle|base64|dispatch>\n");
         return 0;
     }
     const char *name = argv[1];
@@ -381,6 +632,18 @@ int main(int argc, char **argv) {
         bench_collatz();
     } else if (strcmp(name, "raster") == 0) {
         bench_raster();
+    } else if (strcmp(name, "ptrchase") == 0) {
+        bench_ptrchase();
+    } else if (strcmp(name, "hash") == 0) {
+        bench_hash();
+    } else if (strcmp(name, "bst") == 0) {
+        bench_bst();
+    } else if (strcmp(name, "rle") == 0) {
+        bench_rle();
+    } else if (strcmp(name, "base64") == 0) {
+        bench_base64();
+    } else if (strcmp(name, "dispatch") == 0) {
+        bench_dispatch();
     } else {
         printf("unknown benchmark: %s\n", name);
     }

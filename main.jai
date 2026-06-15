@@ -333,6 +333,241 @@ bench_raster :: () {
     print("checksum %\n", checksum);
 }
 
+// --- pointer-chasing (random memory latency) --------------------------------
+// Builds one big random permutation cycle, then chases next[p] for many hops.
+// Each load depends on the previous one, so the prefetcher can't hide it: this
+// measures memory *latency*, unlike the streaming `sieve`. Pure 32-bit integer.
+// This compiler doesn't truncate u32 arithmetic to 32 bits, so the wrapping
+// 32-bit math is done in u64 and masked with `& 0xFFFFFFFF` to match the other
+// languages' u32 wraparound.
+
+bench_ptrchase :: () {
+    N :: 16000000;
+    HOPS :: 4000000;
+    order := NewArray(N, u32);
+    next := NewArray(N, u32);
+    for i: 0..N-1  order[i] = cast(u32) i;
+    x: u64 = 1;
+    i := N - 1;
+    while i >= 1 {
+        x = (x * 1664525 + 1013904223) & 0xFFFFFFFF;
+        j := cast(s64)((x & 0x7FFFFFFF) % cast(u64)(i + 1));
+        t := order[i];
+        order[i] = order[j];
+        order[j] = t;
+        i -= 1;
+    }
+    for k: 0..N-1  next[cast(s64) order[k]] = order[(k + 1) % N];
+    sum: u64 = 0;
+    p: s64 = 0;
+    h := 0;
+    while h < HOPS {
+        p = cast(s64) next[p];
+        sum = (sum + cast(u64) p) & 0xFFFFFFFF;
+        h += 1;
+    }
+    print("checksum %\n", sum);
+}
+
+// --- FNV-1a hash ------------------------------------------------------------
+// Hashes a byte buffer several times with 32-bit FNV-1a. Stresses the integer
+// ALU (xor + wrapping multiply) and a tight sequential read; no SIMD to exploit.
+
+bench_hash :: () {
+    N :: 32000000;
+    R :: 4;
+    buf := NewArray(N, u8);
+    x: u64 = 12345;
+    for i: 0..N-1 {
+        x = (x * 1664525 + 1013904223) & 0xFFFFFFFF;
+        buf[i] = cast(u8)(x & 0xFF);
+    }
+    h: u64 = 2166136261;
+    for r: 0..R-1 {
+        for i: 0..N-1 {
+            h = h ^ cast(u64) buf[i];
+            h = (h * 16777619) & 0xFFFFFFFF;
+        }
+    }
+    print("checksum %\n", h);
+}
+
+// --- binary search tree (heap allocation + pointer chasing) -----------------
+// Inserts M keys into a BST (one heap allocation per node, branchy descent),
+// then runs Q lookups. Measures allocator/GC throughput plus pointer-chasing
+// reads. Keys stay below 2^31 so the signed comparison this compiler emits
+// still matches an unsigned ordering (same trick as `sort`).
+
+BstNode :: struct {
+    key: u64;
+    left: *BstNode;
+    right: *BstNode;
+}
+
+bench_bst :: () {
+    M :: 1000000;
+    Q :: 1000000;
+    root: *BstNode = null;
+    x: u64 = 22222;
+    for n: 0..M-1 {
+        x = (x * 1664525 + 1013904223) & 0xFFFFFFFF;
+        key := x & 0x7FFFFFFF;
+        nn := New(BstNode);
+        nn.key = key;
+        nn.left = null;
+        nn.right = null;
+        if root == null {
+            root = nn;
+            continue;
+        }
+        cur := root;
+        while true {
+            if key < cur.key {
+                if cur.left == null { cur.left = nn; break; }
+                cur = cur.left;
+            } else {
+                if cur.right == null { cur.right = nn; break; }
+                cur = cur.right;
+            }
+        }
+    }
+    y: u64 = 99991;
+    cs: u64 = 0;
+    for q: 0..Q-1 {
+        y = (y * 1664525 + 1013904223) & 0xFFFFFFFF;
+        key := y & 0x7FFFFFFF;
+        steps: u64 = 0;
+        cur := root;
+        while cur != null {
+            steps += 1;
+            if key == cur.key break;
+            if key < cur.key  cur = cur.left;
+            else              cur = cur.right;
+        }
+        cs = (cs * 1000003 + steps) & 0xFFFFFFFF;
+    }
+    print("checksum %\n", cs);
+}
+
+// --- run-length encoding (branchy byte processing) --------------------------
+// Builds a buffer of random runs, then RLE-encodes it several times, folding
+// the (count,value) output into a 32-bit hash. Data-dependent branchy scan.
+
+bench_rle :: () {
+    N :: 40000000;
+    R :: 4;
+    buf := NewArray(N, u8);
+    out := NewArray(2 * N, u8);
+    x: u64 = 33333;
+    i := 0;
+    while i < N {
+        x = (x * 1664525 + 1013904223) & 0xFFFFFFFF;
+        v := cast(u8)(x & 0xFF);
+        rl := cast(s64)((x & 0x7FFFFFFF) % 16) + 1;
+        c := 0;
+        while c < rl && i < N {
+            buf[i] = v;
+            i += 1;
+            c += 1;
+        }
+    }
+    h: u64 = 2166136261;
+    for r: 0..R-1 {
+        o := 0;
+        p := 0;
+        while p < N {
+            v := buf[p];
+            run := 1;
+            while p + run < N && buf[p + run] == v && run < 255  run += 1;
+            out[o] = cast(u8) run;
+            out[o + 1] = v;
+            o += 2;
+            p += run;
+        }
+        for k: 0..o-1 {
+            h = h ^ cast(u64) out[k];
+            h = (h * 16777619) & 0xFFFFFFFF;
+        }
+        h = h ^ cast(u64)(o % 256);             h = (h * 16777619) & 0xFFFFFFFF;
+        h = h ^ cast(u64)((o / 256) % 256);     h = (h * 16777619) & 0xFFFFFFFF;
+        h = h ^ cast(u64)((o / 65536) % 256);   h = (h * 16777619) & 0xFFFFFFFF;
+        h = h ^ cast(u64)((o / 16777216) % 256); h = (h * 16777619) & 0xFFFFFFFF;
+    }
+    print("checksum %\n", h);
+}
+
+// --- base64 encoding (table lookup + bit shuffling) -------------------------
+// Base64-encodes a byte buffer several times, folding the output characters
+// into a 32-bit hash. Uses division (not >>) so every language agrees bit for
+// bit. Stresses byte-level bit manipulation and a small gather/table lookup.
+
+bench_base64 :: () {
+    N :: 24000000;
+    R :: 4;
+    B64 := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    buf := NewArray(N, u8);
+    x: u64 = 44444;
+    for i: 0..N-1 {
+        x = (x * 1664525 + 1013904223) & 0xFFFFFFFF;
+        buf[i] = cast(u8)(x & 0xFF);
+    }
+    h: u64 = 2166136261;
+    for r: 0..R-1 {
+        i := 0;
+        while i + 2 < N {
+            b0 := cast(s64) buf[i];
+            b1 := cast(s64) buf[i + 1];
+            b2 := cast(s64) buf[i + 2];
+            i0 := b0 / 4;
+            i1 := (b0 & 3) * 16 + b1 / 16;
+            i2 := (b1 & 15) * 4 + b2 / 64;
+            i3 := b2 & 63;
+            h = h ^ cast(u64) B64[i0]; h = (h * 16777619) & 0xFFFFFFFF;
+            h = h ^ cast(u64) B64[i1]; h = (h * 16777619) & 0xFFFFFFFF;
+            h = h ^ cast(u64) B64[i2]; h = (h * 16777619) & 0xFFFFFFFF;
+            h = h ^ cast(u64) B64[i3]; h = (h * 16777619) & 0xFFFFFFFF;
+            i += 3;
+        }
+    }
+    print("checksum %\n", h);
+}
+
+// --- indirect dispatch ------------------------------------------------------
+// Applies a stream of ops to an accumulator through a procedure-pointer table,
+// one indirect call per element. Stresses indirect-branch prediction. All ops
+// are 32-bit wrapping + ^ * - (done in u64 and masked) so the result is
+// identical across languages.
+
+op_add :: (a: u64, b: u64) -> u64 { return (a + b) & 0xFFFFFFFF; }
+op_xor :: (a: u64, b: u64) -> u64 { return a ^ b; }
+op_mul :: (a: u64, b: u64) -> u64 { return (a * (b | 1)) & 0xFFFFFFFF; }
+op_sub :: (a: u64, b: u64) -> u64 { return (a - b) & 0xFFFFFFFF; }
+
+bench_dispatch :: () {
+    N :: 4000000;
+    R :: 32;
+    code := NewArray(N, u8);
+    operand := NewArray(N, u32);
+    x: u64 = 55555;
+    for i: 0..N-1 {
+        x = (x * 1664525 + 1013904223) & 0xFFFFFFFF;
+        code[i] = cast(u8)((x & 0x7FFFFFFF) % 4);
+        operand[i] = cast(u32) x;
+    }
+    fns: [4](a: u64, b: u64) -> u64;
+    fns[0] = op_add;
+    fns[1] = op_xor;
+    fns[2] = op_mul;
+    fns[3] = op_sub;
+    acc: u64 = 2166136261;
+    for r: 0..R-1 {
+        for i: 0..N-1 {
+            acc = fns[cast(s64) code[i]](acc, cast(u64) operand[i]);
+        }
+    }
+    print("checksum %\n", acc);
+}
+
 bench_collatz :: () {
     N :: 3_000_000;
     total: u64 = 0;
@@ -376,5 +611,11 @@ main :: () {
     else if streq(name, "sort")        bench_sort();
     else if streq(name, "collatz")     bench_collatz();
     else if streq(name, "raster")      bench_raster();
+    else if streq(name, "ptrchase")    bench_ptrchase();
+    else if streq(name, "hash")        bench_hash();
+    else if streq(name, "bst")         bench_bst();
+    else if streq(name, "rle")         bench_rle();
+    else if streq(name, "base64")      bench_base64();
+    else if streq(name, "dispatch")    bench_dispatch();
     else print("unknown benchmark: %\n", name);
 }

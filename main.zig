@@ -346,6 +346,278 @@ fn benchRaster() !void {
     std.debug.print("checksum {d}\n", .{checksum});
 }
 
+// --- pointer-chasing (random memory latency) --------------------------------
+// Builds one big random permutation cycle, then chases next[p] for many hops.
+// Each load depends on the previous one, so the prefetcher can't hide it: this
+// measures memory *latency*, unlike the streaming `sieve`. Pure 32-bit integer.
+
+fn benchPtrchase() !void {
+    const N: usize = 16000000;
+    const HOPS: u64 = 4000000;
+    const alloc = std.heap.page_allocator;
+    const order = try alloc.alloc(u32, N);
+    defer alloc.free(order);
+    const next = try alloc.alloc(u32, N);
+    defer alloc.free(next);
+    var i: usize = 0;
+    while (i < N) : (i += 1) order[i] = @intCast(i);
+    var x: u32 = 1;
+    i = N - 1;
+    while (i >= 1) : (i -= 1) {
+        x = x *% 1664525 +% 1013904223;
+        const j: usize = (x & 0x7FFFFFFF) % (@as(u32, @intCast(i)) + 1);
+        const t = order[i];
+        order[i] = order[j];
+        order[j] = t;
+    }
+    var k: usize = 0;
+    while (k < N) : (k += 1) next[order[k]] = order[(k + 1) % N];
+    var sum: u32 = 0;
+    var p: u32 = 0;
+    var h: u64 = 0;
+    while (h < HOPS) : (h += 1) {
+        p = next[p];
+        sum +%= p;
+    }
+    std.debug.print("checksum {d}\n", .{sum});
+}
+
+// --- FNV-1a hash ------------------------------------------------------------
+// Hashes a byte buffer several times with 32-bit FNV-1a. Stresses the integer
+// ALU (xor + wrapping multiply) and a tight sequential read; no SIMD to exploit.
+
+fn benchHash() !void {
+    const N: usize = 32000000;
+    const R: usize = 4;
+    const alloc = std.heap.page_allocator;
+    const buf = try alloc.alloc(u8, N);
+    defer alloc.free(buf);
+    var x: u32 = 12345;
+    var i: usize = 0;
+    while (i < N) : (i += 1) {
+        x = x *% 1664525 +% 1013904223;
+        buf[i] = @intCast(x & 0xFF);
+    }
+    var h: u32 = 2166136261;
+    var r: usize = 0;
+    while (r < R) : (r += 1) {
+        i = 0;
+        while (i < N) : (i += 1) {
+            h ^= @as(u32, buf[i]);
+            h *%= 16777619;
+        }
+    }
+    std.debug.print("checksum {d}\n", .{h});
+}
+
+// --- binary search tree (heap allocation + pointer chasing) -----------------
+// Inserts M keys into a BST (one heap allocation per node, branchy descent),
+// then runs Q lookups. Measures allocator/GC throughput plus pointer-chasing
+// reads. Keys stay below 2^31 so signed/unsigned ordering agree everywhere.
+
+const BstNode = struct {
+    key: u32,
+    left: ?*BstNode,
+    right: ?*BstNode,
+};
+
+fn benchBst() !void {
+    const M: usize = 1000000;
+    const Q: usize = 1000000;
+    // page_allocator rounds every allocation up to a page, so a real
+    // general-purpose allocator is used for the many small node allocations.
+    const alloc = std.heap.smp_allocator;
+    var root: ?*BstNode = null;
+    var x: u32 = 22222;
+    var n: usize = 0;
+    while (n < M) : (n += 1) {
+        x = x *% 1664525 +% 1013904223;
+        const key = x & 0x7FFFFFFF;
+        const nn = try alloc.create(BstNode);
+        nn.* = .{ .key = key, .left = null, .right = null };
+        if (root == null) {
+            root = nn;
+            continue;
+        }
+        var cur = root.?;
+        while (true) {
+            if (key < cur.key) {
+                if (cur.left == null) {
+                    cur.left = nn;
+                    break;
+                }
+                cur = cur.left.?;
+            } else {
+                if (cur.right == null) {
+                    cur.right = nn;
+                    break;
+                }
+                cur = cur.right.?;
+            }
+        }
+    }
+    var y: u32 = 99991;
+    var cs: u32 = 0;
+    var q: usize = 0;
+    while (q < Q) : (q += 1) {
+        y = y *% 1664525 +% 1013904223;
+        const key = y & 0x7FFFFFFF;
+        var steps: u32 = 0;
+        var cur = root;
+        while (cur) |node| {
+            steps +%= 1;
+            if (key == node.key) break;
+            cur = if (key < node.key) node.left else node.right;
+        }
+        cs = cs *% 1000003 +% steps;
+    }
+    std.debug.print("checksum {d}\n", .{cs});
+}
+
+// --- run-length encoding (branchy byte processing) --------------------------
+// Builds a buffer of random runs, then RLE-encodes it several times, folding
+// the (count,value) output into a 32-bit hash. Data-dependent branchy scan.
+
+fn benchRle() !void {
+    const N: usize = 40000000;
+    const R: usize = 4;
+    const alloc = std.heap.page_allocator;
+    const buf = try alloc.alloc(u8, N);
+    defer alloc.free(buf);
+    const out = try alloc.alloc(u8, 2 * N);
+    defer alloc.free(out);
+    var x: u32 = 33333;
+    var i: usize = 0;
+    while (i < N) {
+        x = x *% 1664525 +% 1013904223;
+        const v: u8 = @intCast(x & 0xFF);
+        const rl = ((x & 0x7FFFFFFF) % 16) + 1;
+        var c: u32 = 0;
+        while (c < rl and i < N) : (c += 1) {
+            buf[i] = v;
+            i += 1;
+        }
+    }
+    var h: u32 = 2166136261;
+    var r: usize = 0;
+    while (r < R) : (r += 1) {
+        var o: usize = 0;
+        var p: usize = 0;
+        while (p < N) {
+            const v = buf[p];
+            var run: usize = 1;
+            while (p + run < N and buf[p + run] == v and run < 255) : (run += 1) {}
+            out[o] = @intCast(run);
+            out[o + 1] = v;
+            o += 2;
+            p += run;
+        }
+        var k: usize = 0;
+        while (k < o) : (k += 1) {
+            h ^= @as(u32, out[k]);
+            h *%= 16777619;
+        }
+        h ^= @as(u32, @intCast(o % 256));
+        h *%= 16777619;
+        h ^= @as(u32, @intCast((o / 256) % 256));
+        h *%= 16777619;
+        h ^= @as(u32, @intCast((o / 65536) % 256));
+        h *%= 16777619;
+        h ^= @as(u32, @intCast((o / 16777216) % 256));
+        h *%= 16777619;
+    }
+    std.debug.print("checksum {d}\n", .{h});
+}
+
+// --- base64 encoding (table lookup + bit shuffling) -------------------------
+// Base64-encodes a byte buffer several times, folding the output characters
+// into a 32-bit hash. Uses division (not >>) so every language agrees bit for
+// bit. Stresses byte-level bit manipulation and a small gather/table lookup.
+
+const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+fn benchBase64() !void {
+    const N: usize = 24000000;
+    const R: usize = 4;
+    const alloc = std.heap.page_allocator;
+    const buf = try alloc.alloc(u8, N);
+    defer alloc.free(buf);
+    var x: u32 = 44444;
+    var i: usize = 0;
+    while (i < N) : (i += 1) {
+        x = x *% 1664525 +% 1013904223;
+        buf[i] = @intCast(x & 0xFF);
+    }
+    var h: u32 = 2166136261;
+    var r: usize = 0;
+    while (r < R) : (r += 1) {
+        i = 0;
+        while (i + 2 < N) : (i += 3) {
+            const b0: u32 = buf[i];
+            const b1: u32 = buf[i + 1];
+            const b2: u32 = buf[i + 2];
+            const idx0 = b0 / 4;
+            const idx1 = (b0 & 3) * 16 + b1 / 16;
+            const idx2 = (b1 & 15) * 4 + b2 / 64;
+            const idx3 = b2 & 63;
+            h ^= @as(u32, B64[idx0]);
+            h *%= 16777619;
+            h ^= @as(u32, B64[idx1]);
+            h *%= 16777619;
+            h ^= @as(u32, B64[idx2]);
+            h *%= 16777619;
+            h ^= @as(u32, B64[idx3]);
+            h *%= 16777619;
+        }
+    }
+    std.debug.print("checksum {d}\n", .{h});
+}
+
+// --- indirect dispatch ------------------------------------------------------
+// Applies a stream of ops to an accumulator through a function-pointer table,
+// one indirect call per element. Stresses indirect-branch prediction. All ops
+// are 32-bit wrapping + ^ * - so the result is identical across languages.
+
+fn opAdd(a: u32, b: u32) u32 {
+    return a +% b;
+}
+fn opXor(a: u32, b: u32) u32 {
+    return a ^ b;
+}
+fn opMul(a: u32, b: u32) u32 {
+    return a *% (b | 1);
+}
+fn opSub(a: u32, b: u32) u32 {
+    return a -% b;
+}
+
+fn benchDispatch() !void {
+    const N: usize = 4000000;
+    const R: usize = 32;
+    const alloc = std.heap.page_allocator;
+    const code = try alloc.alloc(u8, N);
+    defer alloc.free(code);
+    const operand = try alloc.alloc(u32, N);
+    defer alloc.free(operand);
+    var x: u32 = 55555;
+    var i: usize = 0;
+    while (i < N) : (i += 1) {
+        x = x *% 1664525 +% 1013904223;
+        code[i] = @intCast((x & 0x7FFFFFFF) % 4);
+        operand[i] = x;
+    }
+    const fns = [_]*const fn (u32, u32) u32{ &opAdd, &opXor, &opMul, &opSub };
+    var acc: u32 = 2166136261;
+    var r: usize = 0;
+    while (r < R) : (r += 1) {
+        i = 0;
+        while (i < N) : (i += 1) {
+            acc = fns[code[i]](acc, operand[i]);
+        }
+    }
+    std.debug.print("checksum {d}\n", .{acc});
+}
+
 fn benchCollatz() void {
     const N: u64 = 3_000_000;
     var total: u64 = 0;
@@ -370,7 +642,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
     var it = init.args.iterate();
     _ = it.skip(); // program name
     const name = it.next() orelse {
-        std.debug.print("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster>\n", .{});
+        std.debug.print("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster|ptrchase|hash|bst|rle|base64|dispatch>\n", .{});
         return;
     };
     if (std.mem.eql(u8, name, "fib")) {
@@ -387,6 +659,18 @@ pub fn main(init: std.process.Init.Minimal) !void {
         benchCollatz();
     } else if (std.mem.eql(u8, name, "raster")) {
         try benchRaster();
+    } else if (std.mem.eql(u8, name, "ptrchase")) {
+        try benchPtrchase();
+    } else if (std.mem.eql(u8, name, "hash")) {
+        try benchHash();
+    } else if (std.mem.eql(u8, name, "bst")) {
+        try benchBst();
+    } else if (std.mem.eql(u8, name, "rle")) {
+        try benchRle();
+    } else if (std.mem.eql(u8, name, "base64")) {
+        try benchBase64();
+    } else if (std.mem.eql(u8, name, "dispatch")) {
+        try benchDispatch();
     } else {
         std.debug.print("unknown benchmark: {s}\n", .{name});
     }

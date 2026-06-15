@@ -326,6 +326,244 @@ static void bench_raster() {
     std::cout << "checksum " << checksum << "\n";
 }
 
+// --- pointer-chasing (random memory latency) --------------------------------
+// Builds one big random permutation cycle, then chases next[p] for many hops.
+// Each load depends on the previous one, so the prefetcher can't hide it: this
+// measures memory *latency*, unlike the streaming `sieve`. Pure 32-bit integer.
+
+static void bench_ptrchase() {
+    const std::size_t N = 16000000;
+    const uint64_t HOPS = 4000000;
+    std::vector<uint32_t> order(N);
+    std::vector<uint32_t> next(N);
+    for (std::size_t i = 0; i < N; i++) {
+        order[i] = static_cast<uint32_t>(i);
+    }
+    uint32_t x = 1;
+    for (std::size_t i = N - 1; i >= 1; i--) {
+        x = x * 1664525u + 1013904223u;
+        std::size_t j = (x & 0x7FFFFFFFu) % (i + 1);
+        std::swap(order[i], order[j]);
+    }
+    for (std::size_t k = 0; k < N; k++) {
+        next[order[k]] = order[(k + 1) % N];
+    }
+    uint32_t sum = 0;
+    uint32_t p = 0;
+    for (uint64_t h = 0; h < HOPS; h++) {
+        p = next[p];
+        sum += p;
+    }
+    std::cout << "checksum " << sum << "\n";
+}
+
+// --- FNV-1a hash ------------------------------------------------------------
+// Hashes a byte buffer several times with 32-bit FNV-1a. Stresses the integer
+// ALU (xor + wrapping multiply) and a tight sequential read; no SIMD to exploit.
+
+static void bench_hash() {
+    const std::size_t N = 32000000;
+    const int R = 4;
+    std::vector<uint8_t> buf(N);
+    uint32_t x = 12345;
+    for (std::size_t i = 0; i < N; i++) {
+        x = x * 1664525u + 1013904223u;
+        buf[i] = static_cast<uint8_t>(x & 0xFFu);
+    }
+    uint32_t h = 2166136261u;
+    for (int r = 0; r < R; r++) {
+        for (std::size_t i = 0; i < N; i++) {
+            h ^= buf[i];
+            h *= 16777619u;
+        }
+    }
+    std::cout << "checksum " << h << "\n";
+}
+
+// --- binary search tree (heap allocation + pointer chasing) -----------------
+// Inserts M keys into a BST (one heap allocation per node, branchy descent),
+// then runs Q lookups. Measures allocator/GC throughput plus pointer-chasing
+// reads. Keys stay below 2^31 so signed/unsigned ordering agree everywhere.
+
+struct BstNode {
+    uint32_t key;
+    BstNode *left;
+    BstNode *right;
+};
+
+static void bench_bst() {
+    const std::size_t M = 1000000;
+    const std::size_t Q = 1000000;
+    BstNode *root = nullptr;
+    uint32_t x = 22222;
+    for (std::size_t n = 0; n < M; n++) {
+        x = x * 1664525u + 1013904223u;
+        uint32_t key = x & 0x7FFFFFFFu;
+        BstNode *nn = new BstNode{key, nullptr, nullptr};
+        if (root == nullptr) {
+            root = nn;
+            continue;
+        }
+        BstNode *cur = root;
+        for (;;) {
+            if (key < cur->key) {
+                if (cur->left == nullptr) {
+                    cur->left = nn;
+                    break;
+                }
+                cur = cur->left;
+            } else {
+                if (cur->right == nullptr) {
+                    cur->right = nn;
+                    break;
+                }
+                cur = cur->right;
+            }
+        }
+    }
+    uint32_t y = 99991;
+    uint32_t cs = 0;
+    for (std::size_t q = 0; q < Q; q++) {
+        y = y * 1664525u + 1013904223u;
+        uint32_t key = y & 0x7FFFFFFFu;
+        uint32_t steps = 0;
+        BstNode *cur = root;
+        while (cur != nullptr) {
+            steps += 1;
+            if (key == cur->key) {
+                break;
+            }
+            if (key < cur->key) {
+                cur = cur->left;
+            } else {
+                cur = cur->right;
+            }
+        }
+        cs = cs * 1000003u + steps;
+    }
+    std::cout << "checksum " << cs << "\n";
+}
+
+// --- run-length encoding (branchy byte processing) --------------------------
+// Builds a buffer of random runs, then RLE-encodes it several times, folding
+// the (count,value) output into a 32-bit hash. Data-dependent branchy scan.
+
+static void bench_rle() {
+    const std::size_t N = 40000000;
+    const int R = 4;
+    std::vector<uint8_t> buf(N);
+    std::vector<uint8_t> out(2 * N);
+    uint32_t x = 33333;
+    std::size_t i = 0;
+    while (i < N) {
+        x = x * 1664525u + 1013904223u;
+        uint8_t v = static_cast<uint8_t>(x & 0xFFu);
+        uint32_t rl = ((x & 0x7FFFFFFFu) % 16u) + 1u;
+        for (uint32_t c = 0; c < rl && i < N; c++) {
+            buf[i++] = v;
+        }
+    }
+    uint32_t h = 2166136261u;
+    for (int r = 0; r < R; r++) {
+        std::size_t o = 0;
+        std::size_t p = 0;
+        while (p < N) {
+            uint8_t v = buf[p];
+            std::size_t run = 1;
+            while (p + run < N && buf[p + run] == v && run < 255) {
+                run++;
+            }
+            out[o++] = static_cast<uint8_t>(run);
+            out[o++] = v;
+            p += run;
+        }
+        for (std::size_t k = 0; k < o; k++) {
+            h ^= out[k];
+            h *= 16777619u;
+        }
+        h ^= static_cast<uint8_t>(o % 256);
+        h *= 16777619u;
+        h ^= static_cast<uint8_t>((o / 256) % 256);
+        h *= 16777619u;
+        h ^= static_cast<uint8_t>((o / 65536) % 256);
+        h *= 16777619u;
+        h ^= static_cast<uint8_t>((o / 16777216) % 256);
+        h *= 16777619u;
+    }
+    std::cout << "checksum " << h << "\n";
+}
+
+// --- base64 encoding (table lookup + bit shuffling) -------------------------
+// Base64-encodes a byte buffer several times, folding the output characters
+// into a 32-bit hash. Uses division (not >>) so every language agrees bit for
+// bit. Stresses byte-level bit manipulation and a small gather/table lookup.
+
+static const char B64[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+static void bench_base64() {
+    const std::size_t N = 24000000;
+    const int R = 4;
+    std::vector<uint8_t> buf(N);
+    uint32_t x = 44444;
+    for (std::size_t i = 0; i < N; i++) {
+        x = x * 1664525u + 1013904223u;
+        buf[i] = static_cast<uint8_t>(x & 0xFFu);
+    }
+    uint32_t h = 2166136261u;
+    for (int r = 0; r < R; r++) {
+        for (std::size_t i = 0; i + 2 < N; i += 3) {
+            uint32_t b0 = buf[i];
+            uint32_t b1 = buf[i + 1];
+            uint32_t b2 = buf[i + 2];
+            uint32_t i0 = b0 / 4;
+            uint32_t i1 = (b0 & 3) * 16 + b1 / 16;
+            uint32_t i2 = (b1 & 15) * 4 + b2 / 64;
+            uint32_t i3 = b2 & 63;
+            h ^= static_cast<uint8_t>(B64[i0]);
+            h *= 16777619u;
+            h ^= static_cast<uint8_t>(B64[i1]);
+            h *= 16777619u;
+            h ^= static_cast<uint8_t>(B64[i2]);
+            h *= 16777619u;
+            h ^= static_cast<uint8_t>(B64[i3]);
+            h *= 16777619u;
+        }
+    }
+    std::cout << "checksum " << h << "\n";
+}
+
+// --- indirect dispatch ------------------------------------------------------
+// Applies a stream of ops to an accumulator through a function-pointer table,
+// one indirect call per element. Stresses indirect-branch prediction. All ops
+// are 32-bit wrapping + ^ * - so the result is identical across languages.
+
+static uint32_t op_add(uint32_t a, uint32_t b) { return a + b; }
+static uint32_t op_xor(uint32_t a, uint32_t b) { return a ^ b; }
+static uint32_t op_mul(uint32_t a, uint32_t b) { return a * (b | 1u); }
+static uint32_t op_sub(uint32_t a, uint32_t b) { return a - b; }
+
+static void bench_dispatch() {
+    const std::size_t N = 4000000;
+    const int R = 32;
+    std::vector<uint8_t> code(N);
+    std::vector<uint32_t> operand(N);
+    uint32_t x = 55555;
+    for (std::size_t i = 0; i < N; i++) {
+        x = x * 1664525u + 1013904223u;
+        code[i] = static_cast<uint8_t>((x & 0x7FFFFFFFu) % 4u);
+        operand[i] = x;
+    }
+    uint32_t (*fns[4])(uint32_t, uint32_t) = {op_add, op_xor, op_mul, op_sub};
+    uint32_t acc = 2166136261u;
+    for (int r = 0; r < R; r++) {
+        for (std::size_t i = 0; i < N; i++) {
+            acc = fns[code[i]](acc, operand[i]);
+        }
+    }
+    std::cout << "checksum " << acc << "\n";
+}
+
 static void bench_collatz() {
     const uint64_t N = 3000000;
     uint64_t total = 0;
@@ -347,7 +585,7 @@ static void bench_collatz() {
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        std::cout << "usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster>\n";
+        std::cout << "usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster|ptrchase|hash|bst|rle|base64|dispatch>\n";
         return 0;
     }
     std::string name = argv[1];
@@ -365,6 +603,18 @@ int main(int argc, char **argv) {
         bench_collatz();
     } else if (name == "raster") {
         bench_raster();
+    } else if (name == "ptrchase") {
+        bench_ptrchase();
+    } else if (name == "hash") {
+        bench_hash();
+    } else if (name == "bst") {
+        bench_bst();
+    } else if (name == "rle") {
+        bench_rle();
+    } else if (name == "base64") {
+        bench_base64();
+    } else if (name == "dispatch") {
+        bench_dispatch();
     } else {
         std::cout << "unknown benchmark: " << name << "\n";
     }
