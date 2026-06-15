@@ -97,19 +97,19 @@ Best of 3 runs on the [test system](#test-system) below (lower is better).
 
 | benchmark    |    c |  cpp |  jai |   js | odin | rust |  zig | fastest |
 | ------------ | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ------- |
-| `collatz`    | 0.43 | 0.43 | 0.43 | 6.55 | 0.42 | 0.42 | 0.43 | odin/rust |
-| `fib`        | 2.07 | 2.07 | 2.08 | 6.72 | 2.13 | 2.13 | 2.13 | c/cpp |
-| `mandelbrot` | 0.46 | 0.46 | 0.46 | 0.50 | 0.46 | 0.46 | 0.46 | c/cpp/jai/odin/rust/zig |
-| `matmul`     | 0.04 | 0.04 | 3.82 | 0.21 | 0.05 | 0.04 | 0.04 | c/cpp/rust/zig |
-| `sieve`      | 0.10 | 0.10 | 1.66 | 0.20 | 0.10 | 0.10 | 0.13 | c/cpp/odin/rust |
-| `sort`       | 0.20 | 0.20 | 0.26 | 0.50 | 0.20 | 0.20 | 0.20 | c/cpp/odin/rust/zig |
-| `raster`     | 0.27 | 0.27 | 10.31 | 0.53 | 0.23 | 0.23 | 0.37 | odin/rust |
-| `ptrchase`   | 0.45 | 0.44 | 2.64 | 0.60 | 0.45 | 0.45 | 0.44 | cpp/zig |
-| `hash`       | 0.19 | 0.19 | 1.49 | 0.23 | 0.19 | 0.19 | 0.19 | c/cpp/odin/rust/zig |
-| `bst`        | 0.71 | 0.73 | 6.21 | 1.14 | 0.99 | 0.87 | 0.70 | zig |
-| `rle`        | 0.15 | 0.15 | 3.27 | 0.31 | 0.18 | 0.19 | 0.15 | c/cpp/zig |
-| `base64`     | 0.18 | 0.18 | 1.24 | 0.23 | 0.18 | 0.18 | 0.18 | c/cpp/odin/rust/zig |
-| `dispatch`   | 0.33 | 0.33 | 4.44 | 2.21 | 0.32 | 0.33 | 0.33 | odin |
+| `collatz`    | 0.42 | 0.42 | 0.42 | 6.47 | 0.42 | 0.42 | 0.42 | c/cpp/jai/odin/rust/zig |
+| `fib`        | 2.05 | 2.05 | 2.05 | 6.67 | 2.11 | 2.10 | 2.10 | c/cpp/jai |
+| `mandelbrot` | 0.45 | 0.45 | 0.46 | 0.50 | 0.46 | 0.45 | 0.45 | c/cpp/rust/zig |
+| `matmul`     | 0.04 | 0.04 | 3.77 | 0.21 | 0.05 | 0.04 | 0.04 | c/cpp/rust/zig |
+| `sieve`      | 0.09 | 0.09 | 1.62 | 0.20 | 0.09 | 0.10 | 0.12 | c/cpp/odin |
+| `sort`       | 0.20 | 0.20 | 0.26 | 0.49 | 0.20 | 0.20 | 0.20 | c/cpp/odin/rust/zig |
+| `raster`     | 0.26 | 0.27 | 10.11 | 0.51 | 0.23 | 0.22 | 0.36 | rust |
+| `ptrchase`   | 0.35 | 0.35 | 2.10 | 0.47 | 0.36 | 0.35 | 0.35 | c/cpp/rust/zig |
+| `hash`       | 0.19 | 0.19 | 1.47 | 0.22 | 0.19 | 0.19 | 0.19 | c/cpp/odin/rust/zig |
+| `bst`        | 0.52 | 0.53 | 5.24 | 0.94 | 0.73 | 0.65 | 0.53 | c |
+| `rle`        | 0.15 | 0.15 | 3.24 | 0.31 | 0.18 | 0.19 | 0.14 | zig |
+| `base64`     | 0.18 | 0.18 | 1.17 | 0.22 | 0.18 | 0.18 | 0.18 | c/cpp/odin/rust/zig |
+| `dispatch`   | 0.32 | 0.32 | 3.76 | 2.18 | 0.32 | 0.32 | 0.32 | c/cpp/odin/rust/zig |
 
 ### Rendering throughput (frames per second)
 
@@ -118,32 +118,32 @@ better).
 
 | metric  |    c |  cpp |  jai |   js | odin | rust |  zig | fastest   |
 | ------- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --------- |
-| `raster` fps | 888.9 | 888.9 | 23.3 | 452.8 | 1043.5 | 1043.5 | 648.6 | odin/rust |
+| `raster` fps | 923.1 | 888.9 | 23.7 | 470.6 | 1043.5 | 1090.9 | 666.7 | rust |
 
 ### Peak memory (MB)
 
 | benchmark    |    c |  cpp |  jai |   js | odin | rust |  zig | leanest |
 | ------------ | ---: | ---: | ------: | ---: | ---: | ---: | ---: | ------- |
-| `collatz`    |  1.0 |  1.0 |     1.6 | 45.8 |  1.1 |  1.2 |  1.2 | c       |
-| `fib`        |  1.0 |  1.1 |     1.5 | 44.8 |  1.1 |  1.3 |  1.2 | c       |
-| `mandelbrot` |  1.0 |  1.0 |     1.5 | 47.6 |  1.1 |  1.2 |  1.2 | c       |
-| `matmul`     |  7.1 |  7.1 |     7.7 | 49.9 |  7.2 |  7.3 |  7.2 | c       |
-| `sieve`      | 48.7 | 48.8 |    49.3 | 93.7 | 48.8 | 49.0 | 48.9 | c       |
-| `sort`       | 23.9 | 24.0 |    24.5 | 72.1 | 24.0 | 24.2 | 24.1 | c       |
-| `raster`     |  3.8 |  3.8 |     4.4 | 73.3 |  3.8 |  4.0 |  3.8 | c       |
-| `ptrchase`   | 123.1 | 123.2 | 123.8 | 170.4 | 123.2 | 123.4 | 123.3 | c     |
-| `hash`       | 31.6 | 31.6 |    32.3 | 78.0 | 31.7 | 31.8 | 31.7 | c       |
-| `bst`        | 32.2 | 32.2 | 15626.8 | 131.2 | 47.8 | 32.4 | 31.8 | zig    |
-| `rle`        | 48.2 | 115.5 |  116.3 | 97.0 | 48.3 | 48.4 | 48.3 | c       |
-| `base64`     | 23.9 | 24.0 |    24.8 | 77.2 | 24.0 | 24.2 | 24.1 | c       |
-| `dispatch`   | 20.2 | 20.2 |    21.1 | 68.4 | 20.3 | 20.4 | 20.3 | c       |
+| `collatz`    |  1.0 |  1.0 |     1.6 | 45.2 |  1.1 |  1.2 |  1.2 | c       |
+| `fib`        |  1.1 |  1.0 |     1.5 | 44.7 |  1.1 |  1.2 |  1.2 | cpp     |
+| `mandelbrot` |  1.0 |  1.0 |     1.5 | 47.1 |  1.1 |  1.2 |  1.2 | c       |
+| `matmul`     |  7.1 |  7.1 |     7.7 | 50.0 |  7.2 |  7.3 |  7.2 | c       |
+| `sieve`      | 48.7 | 48.8 |    49.3 | 93.6 | 48.8 | 49.0 | 48.9 | c       |
+| `sort`       | 23.9 | 24.0 |    24.5 | 71.7 | 24.0 | 24.2 | 24.1 | c       |
+| `raster`     |  3.8 |  3.8 |     4.4 | 72.3 |  3.8 |  4.0 |  3.8 | c       |
+| `ptrchase`   | 123.1 | 123.2 | 123.8 | 170.2 | 123.2 | 123.4 | 123.3 | c     |
+| `hash`       | 31.6 | 31.6 |    32.3 | 77.4 | 31.7 | 31.8 | 31.7 | c       |
+| `bst`        | 32.1 | 32.1 | 15626.8 | 130.9 | 47.7 | 32.3 | 31.8 | zig    |
+| `rle`        | 48.2 | 115.5 |  116.3 | 96.8 | 48.3 | 48.4 | 48.3 | c       |
+| `base64`     | 23.9 | 24.0 |    24.8 | 78.2 | 24.0 | 24.2 | 24.1 | c       |
+| `dispatch`   | 20.2 | 20.2 |    21.0 | 67.8 | 20.3 | 20.4 | 20.3 | c       |
 
 ### Binary size & compile time
 
 | metric       | c       | cpp     | jai (OpenJai) | js (Node) | odin   | rust   | zig    |
 | ------------ | ------- | ------- | ------------- | --------- | ------ | ------ | ------ |
 | binary size  | 0.03 MB | 0.04 MB | 4.6 MB        | n/a       | 0.2 MB | 0.4 MB | 0.4 MB |
-| compile time | 0.14 s  | 0.48 s  | 10.00 s       | n/a       | 1.44 s | 0.33 s | 5.83 s |
+| compile time | 0.13 s  | 0.45 s  | 9.72 s        | n/a       | 1.38 s | 0.33 s | 5.56 s |
 | code SLOC    | 469     | 447     | 483           | 488       | 483    | 547    | 524    |
 
 `code SLOC` counts non-blank, non-comment source lines (all seven suites
@@ -160,24 +160,24 @@ binary or compile step.
   so `collatz`, `fib`, `mandelbrot`, `matmul` and `sort` land within noise of
   each other.
 - C, C++, Odin, Rust and Zig **auto-vectorize the tight integer loops**
-  (`matmul`, `sieve`); OpenJai 0.1.0 does *not*, so it is ~95× slower on
-  `matmul` and ~13–17× slower on `sieve`.
-- **`collatz` is where OpenJai catches up** (0.43 vs 0.42 s, effectively tied):
-  its branchy, scalar, divide-heavy inner loop has no vectorizable structure, so
-  the LLVM backends have no advantage to exploit. It's a good counterweight to
-  `matmul` and `sieve`.
+  (`matmul`, `sieve`); OpenJai 0.1.0 does *not*, so it is ~94× slower on
+  `matmul` and ~18× slower on `sieve`.
+- **`collatz` is where OpenJai catches up** (0.42 s, tied with every native
+  backend): its branchy, scalar, divide-heavy inner loop has no vectorizable
+  structure, so the LLVM backends have no advantage to exploit. It's a good
+  counterweight to `matmul` and `sieve`.
 - **`raster` is the most demanding workload** — a full software 3D pipeline
   (transform, project, rasterize, z-test, shade) per frame. The LLVM backends
-  push **~650–1040 FPS** (Odin and Rust fastest at ~1040), while **OpenJai
-  manages only ~23 FPS** (~45× slower): its float-heavy inner loops get none of
+  push **~670–1090 FPS** (Rust fastest at ~1090, Odin ~1040), while **OpenJai
+  manages only ~24 FPS** (~46× slower): its float-heavy inner loops get none of
   the scalar optimization the LLVM backends apply, the same weakness seen on
-  `matmul`/`sieve`. Node lands in the middle at ~453 FPS — respectable for a JIT,
-  but still ~2.3× behind native and carrying a ~73 MB memory floor vs ~4 MB.
+  `matmul`/`sieve`. Node lands in the middle at ~471 FPS — respectable for a JIT,
+  but still ~2.3× behind native and carrying a ~72 MB memory floor vs ~4 MB.
 - **`ptrchase` flattens the native field** — it's pure memory *latency* (a
   dependent-load pointer cycle through 64 MB), so all six native backends
-  converge at **~0.44–0.45 s**: they're all just waiting on the same DRAM, with
+  converge at **~0.35–0.36 s**: they're all just waiting on the same DRAM, with
   no codegen advantage to exploit. It's the opposite of `sieve`'s prefetchable
-  streaming. Node is surprisingly close here (~0.60 s, its best relative
+  streaming. Node is surprisingly close here (~0.47 s, its best relative
   showing — typed arrays and a tight loop), while OpenJai still trails ~6×.
 - **`hash` and `base64` are integer-ALU / bit-twiddling tests** (32-bit FNV-1a
   and base64): the native backends tie at **~0.18–0.19 s**, OpenJai is ~7–8×
@@ -185,16 +185,16 @@ binary or compile step.
   integer work via `Math.imul`.
 - **`bst` is the one workload where the native languages diverge**, because it
   leans on each language's **heap allocator** (one allocation per node).
-  Zig (`smp_allocator`) and C/C++ (system `malloc`) lead at **~0.70–0.73 s**,
-  Rust ~0.87 s, Odin ~0.99 s, then Node ~1.14 s (GC + object headers, ~130 MB).
-  OpenJai is a dramatic outlier: **~6.2 s and ~15.6 GB peak** — its default
+  C/C++ (system `malloc`) and Zig (`smp_allocator`) lead at **~0.52–0.53 s**,
+  Rust ~0.65 s, Odin ~0.73 s, then Node ~0.94 s (GC + object headers, ~131 MB).
+  OpenJai is a dramatic outlier: **~5.2 s and ~15.6 GB peak** — its default
   `New` has no small-object free list and grabs roughly a page per node. A good
   reminder that "the allocator" is part of a language's performance story.
 - **`dispatch` is a trap for the JIT.** Calling four different functions through
   one pointer table makes the call site megamorphic, and **Node can't inline it
-  — 2.21 s, ~7× native** (worse, relatively, than any other benchmark). The
-  native backends predict the indirect call and tie at ~0.32–0.33 s; OpenJai is
-  ~4.4 s.
+  — 2.18 s, ~7× native** (worse, relatively, than any other benchmark). The
+  native backends predict the indirect call and tie at ~0.32 s; OpenJai is
+  ~3.8 s.
 - **C is consistently the leanest on peak memory** — it has essentially no
   runtime, so it sits a fraction of a MB below everything else on every
   workload. C and C++ also ship the **smallest binaries** (~0.03–0.04 MB,
@@ -204,8 +204,8 @@ binary or compile step.
   tail non-resident.)
 - **C compiles fastest here** (single-file `cc -O3`, ~0.1 s); C++ pays a little
   for `<iostream>`/`<vector>` template instantiation (~0.5 s). OpenJai is the
-  slowest to build (~10 s), followed by Zig's full `ReleaseFast` LLVM pipeline
-  (~5.8 s).
+  slowest to build (~9.7 s), followed by Zig's full `ReleaseFast` LLVM pipeline
+  (~5.6 s).
 - **C++ is the most concise** at 447 SLOC, just ahead of C (469) and the
   Jai/Odin pair (both 483), with JavaScript close behind (488); **Rust is now
   the most verbose** (547), past Zig (524). The gap is mostly bookkeeping and
