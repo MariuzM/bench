@@ -11,9 +11,7 @@
 #include <vector>
 
 static uint64_t fib(uint64_t n) {
-    if (n < 2) {
-        return n;
-    }
+    if (n < 2) return n;
     return fib(n - 1) + fib(n - 2);
 }
 
@@ -34,8 +32,7 @@ static void bench_mandelbrot() {
         double y0 = (static_cast<double>(py) / static_cast<double>(H)) * 4.0 - 2.0;
         for (std::size_t px = 0; px < W; px++) {
             double x0 = (static_cast<double>(px) / static_cast<double>(W)) * 4.0 - 2.5;
-            double x = 0.0;
-            double y = 0.0;
+            double x = 0.0, y = 0.0;
             uint64_t it = 0;
             while (x * x + y * y <= 4.0 && it < MAX_IT) {
                 double xt = x * x - y * y + x0;
@@ -73,47 +70,31 @@ static void bench_matmul() {
     }
 
     int64_t sum = 0;
-    for (std::size_t i = 0; i < N * N; i++) {
-        sum += c[i];
-    }
+    for (std::size_t i = 0; i < N * N; i++) sum += c[i];
     std::cout << "checksum " << sum << "\n";
 }
 
 static void bench_sieve() {
     const std::size_t N = 50000000;
     std::vector<uint8_t> sieve(N, 1);
-    sieve[0] = 0;
-    sieve[1] = 0;
+    sieve[0] = sieve[1] = 0;
 
-    for (std::size_t i = 2; i * i < N; i++) {
-        if (sieve[i] == 1) {
-            for (std::size_t j = i * i; j < N; j += i) {
-                sieve[j] = 0;
-            }
-        }
-    }
+    for (std::size_t i = 2; i * i < N; i++)
+        if (sieve[i] == 1)
+            for (std::size_t j = i * i; j < N; j += i) sieve[j] = 0;
 
     uint64_t count = 0;
-    for (std::size_t i = 0; i < N; i++) {
-        count += sieve[i];
-    }
+    for (std::size_t i = 0; i < N; i++) count += sieve[i];
     std::cout << "checksum " << count << "\n";
 }
 
 static void quicksort(std::vector<uint64_t> &arr, int64_t lo, int64_t hi) {
-    if (lo >= hi) {
-        return;
-    }
+    if (lo >= hi) return;
     uint64_t pivot = arr[(lo + hi) / 2];
-    int64_t i = lo;
-    int64_t j = hi;
+    int64_t i = lo, j = hi;
     while (i <= j) {
-        while (arr[i] < pivot) {
-            i += 1;
-        }
-        while (arr[j] > pivot) {
-            j -= 1;
-        }
+        while (arr[i] < pivot) i += 1;
+        while (arr[j] > pivot) j -= 1;
         if (i <= j) {
             std::swap(arr[i], arr[j]);
             i += 1;
@@ -158,10 +139,7 @@ static const int RASTER_NV = (RASTER_RINGS + 1) * (RASTER_SECTORS + 1);
 
 static double r_floor(double y) {
     double f = static_cast<double>(static_cast<int64_t>(y));
-    if (f > y) {
-        return f - 1.0;
-    }
-    return f;
+    return f > y ? f - 1.0 : f;
 }
 
 static double r_sin(double x) {
@@ -193,9 +171,7 @@ static void bench_raster() {
     const double FOCAL = 500.0;
     const double CAM_DIST = 3.0;
 
-    std::vector<double> bx(RASTER_NV);
-    std::vector<double> by(RASTER_NV);
-    std::vector<double> bz(RASTER_NV);
+    std::vector<double> bx(RASTER_NV), by(RASTER_NV), bz(RASTER_NV);
     int nv = 0;
     for (int i = 0; i <= RASTER_RINGS; i++) {
         double theta = 3.141592653589793 * (static_cast<double>(i) / static_cast<double>(RASTER_RINGS));
@@ -212,10 +188,7 @@ static void bench_raster() {
         }
     }
 
-    std::vector<double> sx(RASTER_NV);
-    std::vector<double> sy(RASTER_NV);
-    std::vector<double> sz(RASTER_NV);
-    std::vector<double> si(RASTER_NV);
+    std::vector<double> sx(RASTER_NV), sy(RASTER_NV), sz(RASTER_NV), si(RASTER_NV);
 
     std::vector<uint8_t> color(RASTER_W * RASTER_H);
     std::vector<double> zbuf(RASTER_W * RASTER_H);
@@ -231,18 +204,14 @@ static void bench_raster() {
         double sxr = r_sin(axx);
 
         for (int v = 0; v < nv; v++) {
-            double px0 = bx[v];
-            double py0 = by[v];
-            double pz0 = bz[v];
+            double px0 = bx[v], py0 = by[v], pz0 = bz[v];
             double rx = px0 * cy + pz0 * syr;
             double rz = -px0 * syr + pz0 * cy;
             double ry = py0;
             double ry2 = ry * cx - rz * sxr;
             double rz2 = ry * sxr + rz * cx;
             double inten = -rz2;
-            if (inten < 0.0) {
-                inten = 0.0;
-            }
+            if (inten < 0.0) inten = 0.0;
             double zc = rz2 + CAM_DIST;
             double invz = 1.0 / zc;
             sx[v] = rx * invz * FOCAL + static_cast<double>(RASTER_W) * 0.5;
@@ -251,10 +220,7 @@ static void bench_raster() {
             si[v] = inten;
         }
 
-        for (int i = 0; i < RASTER_W * RASTER_H; i++) {
-            color[i] = 0;
-            zbuf[i] = 1.0e30;
-        }
+        for (int i = 0; i < RASTER_W * RASTER_H; i++) { color[i] = 0; zbuf[i] = 1.0e30; }
 
         for (int ri = 0; ri < RASTER_RINGS; ri++) {
             for (int sj = 0; sj < RASTER_SECTORS; sj++) {
@@ -262,13 +228,9 @@ static void bench_raster() {
                 int b = a + (RASTER_SECTORS + 1);
                 int tris[2][3] = {{a, b, a + 1}, {a + 1, b, b + 1}};
                 for (int t = 0; t < 2; t++) {
-                    int i0 = tris[t][0];
-                    int i1 = tris[t][1];
-                    int i2 = tris[t][2];
+                    int i0 = tris[t][0], i1 = tris[t][1], i2 = tris[t][2];
                     double area = edge(sx[i0], sy[i0], sx[i1], sy[i1], sx[i2], sy[i2]);
-                    if (area <= 0.0) {
-                        continue;
-                    }
+                    if (area <= 0.0) continue;
                     double mnx = sx[i0];
                     if (sx[i1] < mnx) mnx = sx[i1];
                     if (sx[i2] < mnx) mnx = sx[i2];
@@ -285,10 +247,8 @@ static void bench_raster() {
                     if (mxx > static_cast<double>(RASTER_W - 1)) mxx = static_cast<double>(RASTER_W - 1);
                     if (mny < 0.0) mny = 0.0;
                     if (mxy > static_cast<double>(RASTER_H - 1)) mxy = static_cast<double>(RASTER_H - 1);
-                    int x0 = static_cast<int>(mnx);
-                    int x1 = static_cast<int>(mxx);
-                    int y0 = static_cast<int>(mny);
-                    int y1 = static_cast<int>(mxy);
+                    int x0 = static_cast<int>(mnx), x1 = static_cast<int>(mxx);
+                    int y0 = static_cast<int>(mny), y1 = static_cast<int>(mxy);
                     for (int py = y0; py <= y1; py++) {
                         double pcy = static_cast<double>(py) + 0.5;
                         for (int px = x0; px <= x1; px++) {
@@ -297,9 +257,7 @@ static void bench_raster() {
                             double w1 = edge(sx[i2], sy[i2], sx[i0], sy[i0], pcx, pcy);
                             double w2 = edge(sx[i0], sy[i0], sx[i1], sy[i1], pcx, pcy);
                             if (w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0) {
-                                double l0 = w0 / area;
-                                double l1 = w1 / area;
-                                double l2 = w2 / area;
+                                double l0 = w0 / area, l1 = w1 / area, l2 = w2 / area;
                                 double depth = l0 * sz[i0] + l1 * sz[i1] + l2 * sz[i2];
                                 int idx = py * RASTER_W + px;
                                 if (depth < zbuf[idx]) {
@@ -317,9 +275,7 @@ static void bench_raster() {
         }
 
         uint64_t frame_sum = 0;
-        for (int i = 0; i < RASTER_W * RASTER_H; i++) {
-            frame_sum += color[i];
-        }
+        for (int i = 0; i < RASTER_W * RASTER_H; i++) frame_sum += color[i];
         checksum = checksum * 1000003 + frame_sum;
     }
 
@@ -336,20 +292,15 @@ static void bench_ptrchase() {
     const uint64_t HOPS = 4000000;
     std::vector<uint32_t> order(N);
     std::vector<uint32_t> next(N);
-    for (std::size_t i = 0; i < N; i++) {
-        order[i] = static_cast<uint32_t>(i);
-    }
+    for (std::size_t i = 0; i < N; i++) order[i] = static_cast<uint32_t>(i);
     uint32_t x = 1;
     for (std::size_t i = N - 1; i >= 1; i--) {
         x = x * 1664525u + 1013904223u;
         std::size_t j = (x & 0x7FFFFFFFu) % (i + 1);
         std::swap(order[i], order[j]);
     }
-    for (std::size_t k = 0; k < N; k++) {
-        next[order[k]] = order[(k + 1) % N];
-    }
-    uint32_t sum = 0;
-    uint32_t p = 0;
+    for (std::size_t k = 0; k < N; k++) next[order[k]] = order[(k + 1) % N];
+    uint32_t sum = 0, p = 0;
     for (uint64_t h = 0; h < HOPS; h++) {
         p = next[p];
         sum += p;
@@ -400,23 +351,14 @@ static void bench_bst() {
         x = x * 1664525u + 1013904223u;
         uint32_t key = x & 0x7FFFFFFFu;
         BstNode *nn = new BstNode{key, nullptr, nullptr};
-        if (root == nullptr) {
-            root = nn;
-            continue;
-        }
+        if (root == nullptr) { root = nn; continue; }
         BstNode *cur = root;
         for (;;) {
             if (key < cur->key) {
-                if (cur->left == nullptr) {
-                    cur->left = nn;
-                    break;
-                }
+                if (cur->left == nullptr) { cur->left = nn; break; }
                 cur = cur->left;
             } else {
-                if (cur->right == nullptr) {
-                    cur->right = nn;
-                    break;
-                }
+                if (cur->right == nullptr) { cur->right = nn; break; }
                 cur = cur->right;
             }
         }
@@ -430,14 +372,8 @@ static void bench_bst() {
         BstNode *cur = root;
         while (cur != nullptr) {
             steps += 1;
-            if (key == cur->key) {
-                break;
-            }
-            if (key < cur->key) {
-                cur = cur->left;
-            } else {
-                cur = cur->right;
-            }
+            if (key == cur->key) break;
+            cur = key < cur->key ? cur->left : cur->right;
         }
         cs = cs * 1000003u + steps;
     }
@@ -459,9 +395,7 @@ static void bench_rle() {
         x = x * 1664525u + 1013904223u;
         uint8_t v = static_cast<uint8_t>(x & 0xFFu);
         uint32_t rl = ((x & 0x7FFFFFFFu) % 16u) + 1u;
-        for (uint32_t c = 0; c < rl && i < N; c++) {
-            buf[i++] = v;
-        }
+        for (uint32_t c = 0; c < rl && i < N; c++) buf[i++] = v;
     }
     uint32_t h = 2166136261u;
     for (int r = 0; r < R; r++) {
@@ -470,9 +404,7 @@ static void bench_rle() {
         while (p < N) {
             uint8_t v = buf[p];
             std::size_t run = 1;
-            while (p + run < N && buf[p + run] == v && run < 255) {
-                run++;
-            }
+            while (p + run < N && buf[p + run] == v && run < 255) run++;
             out[o++] = static_cast<uint8_t>(run);
             out[o++] = v;
             p += run;
@@ -568,14 +500,9 @@ static void bench_collatz() {
     const uint64_t N = 3000000;
     uint64_t total = 0;
     for (uint64_t i = 1; i <= N; i++) {
-        uint64_t n = i;
-        uint64_t steps = 0;
+        uint64_t n = i, steps = 0;
         while (n != 1) {
-            if (n % 2 == 0) {
-                n = n / 2;
-            } else {
-                n = 3 * n + 1;
-            }
+            n = n % 2 == 0 ? n / 2 : 3 * n + 1;
             steps += 1;
         }
         total += steps;
@@ -583,40 +510,22 @@ static void bench_collatz() {
     std::cout << "checksum " << total << "\n";
 }
 
+static const struct { const char *name; void (*fn)(); } BENCHES[] = {
+    {"fib", bench_fib}, {"mandelbrot", bench_mandelbrot}, {"matmul", bench_matmul},
+    {"sieve", bench_sieve}, {"sort", bench_sort}, {"collatz", bench_collatz},
+    {"raster", bench_raster}, {"ptrchase", bench_ptrchase}, {"hash", bench_hash},
+    {"bst", bench_bst}, {"rle", bench_rle}, {"base64", bench_base64},
+    {"dispatch", bench_dispatch},
+};
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         std::cout << "usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster|ptrchase|hash|bst|rle|base64|dispatch>\n";
         return 0;
     }
     std::string name = argv[1];
-    if (name == "fib") {
-        bench_fib();
-    } else if (name == "mandelbrot") {
-        bench_mandelbrot();
-    } else if (name == "matmul") {
-        bench_matmul();
-    } else if (name == "sieve") {
-        bench_sieve();
-    } else if (name == "sort") {
-        bench_sort();
-    } else if (name == "collatz") {
-        bench_collatz();
-    } else if (name == "raster") {
-        bench_raster();
-    } else if (name == "ptrchase") {
-        bench_ptrchase();
-    } else if (name == "hash") {
-        bench_hash();
-    } else if (name == "bst") {
-        bench_bst();
-    } else if (name == "rle") {
-        bench_rle();
-    } else if (name == "base64") {
-        bench_base64();
-    } else if (name == "dispatch") {
-        bench_dispatch();
-    } else {
-        std::cout << "unknown benchmark: " << name << "\n";
-    }
+    for (const auto &b : BENCHES)
+        if (name == b.name) { b.fn(); return 0; }
+    std::cout << "unknown benchmark: " << name << "\n";
     return 0;
 }

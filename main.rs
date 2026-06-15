@@ -16,10 +16,8 @@ fn fib(n: u64) -> u64 {
 
 fn bench_fib() {
     let mut total: u64 = 0;
-    let mut n: u64 = 30;
-    while n <= 42 {
+    for n in 30u64..=42 {
         total = total.wrapping_add(fib(n));
-        n += 1;
     }
     println!("checksum {}", total);
 }
@@ -29,14 +27,11 @@ fn bench_mandelbrot() {
     const H: usize = 1200;
     const MAX_IT: u64 = 1000;
     let mut sum: u64 = 0;
-    let mut py: usize = 0;
-    while py < H {
+    for py in 0..H {
         let y0 = (py as f64 / H as f64) * 4.0 - 2.0;
-        let mut px: usize = 0;
-        while px < W {
+        for px in 0..W {
             let x0 = (px as f64 / W as f64) * 4.0 - 2.5;
-            let mut x: f64 = 0.0;
-            let mut y: f64 = 0.0;
+            let (mut x, mut y): (f64, f64) = (0.0, 0.0);
             let mut it: u64 = 0;
             while x * x + y * y <= 4.0 && it < MAX_IT {
                 let xt = x * x - y * y + x0;
@@ -45,9 +40,7 @@ fn bench_mandelbrot() {
                 it += 1;
             }
             sum = sum.wrapping_add(it);
-            px += 1;
         }
-        py += 1;
     }
     println!("checksum {}", sum);
 }
@@ -58,38 +51,26 @@ fn bench_matmul() {
     let mut b = vec![0i64; N * N];
     let mut c = vec![0i64; N * N];
 
-    let mut i: usize = 0;
-    while i < N {
-        let mut j: usize = 0;
-        while j < N {
+    for i in 0..N {
+        for j in 0..N {
             a[i * N + j] = ((i * j) % 7) as i64 - 3;
             b[i * N + j] = ((i + j) % 5) as i64 - 2;
             c[i * N + j] = 0;
-            j += 1;
         }
-        i += 1;
     }
 
-    i = 0;
-    while i < N {
-        let mut k: usize = 0;
-        while k < N {
+    for i in 0..N {
+        for k in 0..N {
             let aik = a[i * N + k];
-            let mut j: usize = 0;
-            while j < N {
+            for j in 0..N {
                 c[i * N + j] += aik * b[k * N + j];
-                j += 1;
             }
-            k += 1;
         }
-        i += 1;
     }
 
     let mut sum: i64 = 0;
-    i = 0;
-    while i < N * N {
+    for i in 0..N * N {
         sum = sum.wrapping_add(c[i]);
-        i += 1;
     }
     println!("checksum {}", sum);
 }
@@ -103,20 +84,16 @@ fn bench_sieve() {
     let mut i: usize = 2;
     while i * i < N {
         if sieve[i] == 1 {
-            let mut j: usize = i * i;
-            while j < N {
+            for j in (i * i..N).step_by(i) {
                 sieve[j] = 0;
-                j += i;
             }
         }
         i += 1;
     }
 
     let mut count: u64 = 0;
-    i = 0;
-    while i < N {
+    for i in 0..N {
         count += sieve[i] as u64;
-        i += 1;
     }
     println!("checksum {}", count);
 }
@@ -126,8 +103,7 @@ fn quicksort(arr: &mut [u64], lo: isize, hi: isize) {
         return;
     }
     let pivot = arr[((lo + hi) / 2) as usize];
-    let mut i = lo;
-    let mut j = hi;
+    let (mut i, mut j) = (lo, hi);
     while i <= j {
         while arr[i as usize] < pivot {
             i += 1;
@@ -150,22 +126,18 @@ fn bench_sort() {
     let mut arr = vec![0u64; N];
 
     let mut state: u64 = 88172645463325252;
-    let mut i: usize = 0;
-    while i < N {
+    for i in 0..N {
         state = state
             .wrapping_mul(6364136223846793005)
             .wrapping_add(1442695040888963407);
         arr[i] = state & 0x7FFFFFFFFFFFFFFF;
-        i += 1;
     }
 
     quicksort(&mut arr, 0, N as isize - 1);
 
     let mut cs: u64 = 0;
-    i = 0;
-    while i < N {
+    for i in 0..N {
         cs = cs.wrapping_mul(1000003).wrapping_add(arr[i]);
-        i += 1;
     }
     println!("checksum {}", cs);
 }
@@ -220,9 +192,7 @@ fn bench_raster() {
     const FOCAL: f64 = 500.0;
     const CAM_DIST: f64 = 3.0;
 
-    let mut bx = vec![0f64; NV];
-    let mut by = vec![0f64; NV];
-    let mut bz = vec![0f64; NV];
+    let (mut bx, mut by, mut bz) = (vec![0f64; NV], vec![0f64; NV], vec![0f64; NV]);
     let mut nv: usize = 0;
     for i in 0..=RINGS {
         let theta = 3.141592653589793 * (i as f64 / RINGS as f64);
@@ -239,10 +209,12 @@ fn bench_raster() {
         }
     }
 
-    let mut sx = vec![0f64; NV];
-    let mut sy = vec![0f64; NV];
-    let mut sz = vec![0f64; NV];
-    let mut si = vec![0f64; NV];
+    let (mut sx, mut sy, mut sz, mut si) = (
+        vec![0f64; NV],
+        vec![0f64; NV],
+        vec![0f64; NV],
+        vec![0f64; NV],
+    );
 
     let mut color = vec![0u8; W * H];
     let mut zbuf = vec![0f64; W * H];
@@ -258,9 +230,7 @@ fn bench_raster() {
         let sxr = r_sin(axx);
 
         for v in 0..nv {
-            let px0 = bx[v];
-            let py0 = by[v];
-            let pz0 = bz[v];
+            let (px0, py0, pz0) = (bx[v], by[v], bz[v]);
             let rx = px0 * cy + pz0 * syr;
             let rz = -px0 * syr + pz0 * cy;
             let ry = py0;
@@ -289,59 +259,77 @@ fn bench_raster() {
                 let b = a + (SECTORS + 1);
                 let tris = [[a, b, a + 1], [a + 1, b, b + 1]];
                 for t in 0..2 {
-                    let i0 = tris[t][0];
-                    let i1 = tris[t][1];
-                    let i2 = tris[t][2];
+                    let (i0, i1, i2) = (tris[t][0], tris[t][1], tris[t][2]);
                     let area = edge(sx[i0], sy[i0], sx[i1], sy[i1], sx[i2], sy[i2]);
                     if area <= 0.0 {
                         continue;
                     }
                     let mut mnx = sx[i0];
-                    if sx[i1] < mnx { mnx = sx[i1]; }
-                    if sx[i2] < mnx { mnx = sx[i2]; }
+                    if sx[i1] < mnx {
+                        mnx = sx[i1];
+                    }
+                    if sx[i2] < mnx {
+                        mnx = sx[i2];
+                    }
                     let mut mxx = sx[i0];
-                    if sx[i1] > mxx { mxx = sx[i1]; }
-                    if sx[i2] > mxx { mxx = sx[i2]; }
+                    if sx[i1] > mxx {
+                        mxx = sx[i1];
+                    }
+                    if sx[i2] > mxx {
+                        mxx = sx[i2];
+                    }
                     let mut mny = sy[i0];
-                    if sy[i1] < mny { mny = sy[i1]; }
-                    if sy[i2] < mny { mny = sy[i2]; }
+                    if sy[i1] < mny {
+                        mny = sy[i1];
+                    }
+                    if sy[i2] < mny {
+                        mny = sy[i2];
+                    }
                     let mut mxy = sy[i0];
-                    if sy[i1] > mxy { mxy = sy[i1]; }
-                    if sy[i2] > mxy { mxy = sy[i2]; }
-                    if mnx < 0.0 { mnx = 0.0; }
-                    if mxx > (W - 1) as f64 { mxx = (W - 1) as f64; }
-                    if mny < 0.0 { mny = 0.0; }
-                    if mxy > (H - 1) as f64 { mxy = (H - 1) as f64; }
-                    let x0 = mnx as usize;
-                    let x1 = mxx as usize;
-                    let y0 = mny as usize;
-                    let y1 = mxy as usize;
-                    let mut py = y0;
-                    while py <= y1 {
+                    if sy[i1] > mxy {
+                        mxy = sy[i1];
+                    }
+                    if sy[i2] > mxy {
+                        mxy = sy[i2];
+                    }
+                    if mnx < 0.0 {
+                        mnx = 0.0;
+                    }
+                    if mxx > (W - 1) as f64 {
+                        mxx = (W - 1) as f64;
+                    }
+                    if mny < 0.0 {
+                        mny = 0.0;
+                    }
+                    if mxy > (H - 1) as f64 {
+                        mxy = (H - 1) as f64;
+                    }
+                    let (x0, x1) = (mnx as usize, mxx as usize);
+                    let (y0, y1) = (mny as usize, mxy as usize);
+                    for py in y0..=y1 {
                         let pcy = py as f64 + 0.5;
-                        let mut px = x0;
-                        while px <= x1 {
+                        for px in x0..=x1 {
                             let pcx = px as f64 + 0.5;
                             let w0 = edge(sx[i1], sy[i1], sx[i2], sy[i2], pcx, pcy);
                             let w1 = edge(sx[i2], sy[i2], sx[i0], sy[i0], pcx, pcy);
                             let w2 = edge(sx[i0], sy[i0], sx[i1], sy[i1], pcx, pcy);
                             if w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0 {
-                                let l0 = w0 / area;
-                                let l1 = w1 / area;
-                                let l2 = w2 / area;
+                                let (l0, l1, l2) = (w0 / area, w1 / area, w2 / area);
                                 let depth = l0 * sz[i0] + l1 * sz[i1] + l2 * sz[i2];
                                 let idx = py * W + px;
                                 if depth < zbuf[idx] {
                                     zbuf[idx] = depth;
                                     let mut inten = l0 * si[i0] + l1 * si[i1] + l2 * si[i2];
-                                    if inten < 0.0 { inten = 0.0; }
-                                    if inten > 1.0 { inten = 1.0; }
+                                    if inten < 0.0 {
+                                        inten = 0.0;
+                                    }
+                                    if inten > 1.0 {
+                                        inten = 1.0;
+                                    }
                                     color[idx] = (inten * 255.0) as u8;
                                 }
                             }
-                            px += 1;
                         }
-                        py += 1;
                     }
                 }
             }
@@ -379,8 +367,7 @@ fn bench_ptrchase() {
     for k in 0..N {
         next[order[k] as usize] = order[(k + 1) % N];
     }
-    let mut sum: u32 = 0;
-    let mut p: u32 = 0;
+    let (mut sum, mut p): (u32, u32) = (0, 0);
     for _ in 0..HOPS {
         p = next[p as usize];
         sum = sum.wrapping_add(p);
@@ -442,10 +429,10 @@ fn bench_bst() {
                     break;
                 }
                 Some(node) => {
-                    if key < node.key {
-                        cur = &mut node.left;
+                    cur = if key < node.key {
+                        &mut node.left
                     } else {
-                        cur = &mut node.right;
+                        &mut node.right
                     }
                 }
             }
@@ -463,11 +450,11 @@ fn bench_bst() {
             if key == node.key {
                 break;
             }
-            if key < node.key {
-                cur = &node.left;
+            cur = if key < node.key {
+                &node.left
             } else {
-                cur = &node.right;
-            }
+                &node.right
+            };
         }
         cs = cs.wrapping_mul(1000003).wrapping_add(steps);
     }
@@ -498,8 +485,7 @@ fn bench_rle() {
     }
     let mut h: u32 = 2166136261;
     for _ in 0..R {
-        let mut o: usize = 0;
-        let mut p: usize = 0;
+        let (mut o, mut p): (usize, usize) = (0, 0);
         while p < N {
             let v = buf[p];
             let mut run: usize = 1;
@@ -545,8 +531,7 @@ fn bench_base64() {
     }
     let mut h: u32 = 2166136261;
     for _ in 0..R {
-        let mut i: usize = 0;
-        while i + 2 < N {
+        for i in (0..N - 2).step_by(3) {
             let b0 = buf[i] as u32;
             let b1 = buf[i + 1] as u32;
             let b2 = buf[i + 2] as u32;
@@ -562,7 +547,6 @@ fn bench_base64() {
             h = h.wrapping_mul(16777619);
             h ^= B64[i3 as usize] as u32;
             h = h.wrapping_mul(16777619);
-            i += 3;
         }
     }
     println!("checksum {}", h);
@@ -610,31 +594,21 @@ fn bench_dispatch() {
 fn bench_collatz() {
     const N: u64 = 3_000_000;
     let mut total: u64 = 0;
-    let mut i: u64 = 1;
-    while i <= N {
-        let mut n: u64 = i;
-        let mut steps: u64 = 0;
+    for i in 1..=N {
+        let (mut n, mut steps): (u64, u64) = (i, 0);
         while n != 1 {
-            if n % 2 == 0 {
-                n = n / 2;
-            } else {
-                n = 3 * n + 1;
-            }
+            n = if n % 2 == 0 { n / 2 } else { 3 * n + 1 };
             steps += 1;
         }
         total = total.wrapping_add(steps);
-        i += 1;
     }
     println!("checksum {}", total);
 }
 
 fn main() {
-    let name = match env::args().nth(1) {
-        Some(n) => n,
-        None => {
-            println!("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster|ptrchase|hash|bst|rle|base64|dispatch>");
-            return;
-        }
+    let Some(name) = env::args().nth(1) else {
+        println!("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster|ptrchase|hash|bst|rle|base64|dispatch>");
+        return;
     };
     match name.as_str() {
         "fib" => bench_fib(),

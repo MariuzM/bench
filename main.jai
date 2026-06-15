@@ -75,9 +75,7 @@ bench_matmul :: () {
     }
 
     sum: s64 = 0;
-    for i: 0..N*N-1 {
-        sum += c[i];
-    }
+    for i: 0..N*N-1  sum += c[i];
     print("checksum %\n", sum);
 }
 
@@ -99,19 +97,14 @@ bench_sieve :: () {
     }
 
     count: u64 = 0;
-    k := 2;
-    while k < N {
-        if sieve[k] == 0  count += 1;
-        k += 1;
-    }
+    for k: 2..N-1  if sieve[k] == 0  count += 1;
     print("checksum %\n", count);
 }
 
 quicksort :: (arr: [] u64, lo: s64, hi: s64) {
     if lo >= hi return;
     pivot := arr[(lo + hi) / 2];
-    i := lo;
-    j := hi;
+    i, j := lo, hi;
     while i <= j {
         while arr[i] < pivot  i += 1;
         while arr[j] > pivot  j -= 1;
@@ -239,9 +232,7 @@ bench_raster :: () {
         sxr := r_sin(axx);
 
         for v: 0..nv-1 {
-            px0 := bx[v];
-            py0 := by[v];
-            pz0 := bz[v];
+            px0, py0, pz0 := bx[v], by[v], bz[v];
             rx := px0 * cy + pz0 * syr;
             rz := -px0 * syr + pz0 * cy;
             ry := py0;
@@ -257,10 +248,7 @@ bench_raster :: () {
             si[v] = inten;
         }
 
-        for c: 0..W*H-1 {
-            color[c] = 0;
-            zbuf[c] = 1.0e30;
-        }
+        for c: 0..W*H-1 { color[c] = 0; zbuf[c] = 1.0e30; }
 
         for ri: 0..RINGS-1 {
             for sj: 0..SECTORS-1 {
@@ -288,23 +276,16 @@ bench_raster :: () {
                     if mxx > cast(float64)(W - 1)  mxx = cast(float64)(W - 1);
                     if mny < 0.0  mny = 0.0;
                     if mxy > cast(float64)(H - 1)  mxy = cast(float64)(H - 1);
-                    x0 := cast(s64) mnx;
-                    x1 := cast(s64) mxx;
-                    y0 := cast(s64) mny;
-                    y1 := cast(s64) mxy;
-                    py := y0;
-                    while py <= y1 {
+                    x0, x1, y0, y1 := cast(s64) mnx, cast(s64) mxx, cast(s64) mny, cast(s64) mxy;
+                    for py: y0..y1 {
                         pcy := cast(float64) py + 0.5;
-                        px := x0;
-                        while px <= x1 {
+                        for px: x0..x1 {
                             pcx := cast(float64) px + 0.5;
                             w0 := edge(sx[i1], sy[i1], sx[i2], sy[i2], pcx, pcy);
                             w1 := edge(sx[i2], sy[i2], sx[i0], sy[i0], pcx, pcy);
                             w2 := edge(sx[i0], sy[i0], sx[i1], sy[i1], pcx, pcy);
                             if w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0 {
-                                l0 := w0 / area;
-                                l1 := w1 / area;
-                                l2 := w2 / area;
+                                l0, l1, l2 := w0 / area, w1 / area, w2 / area;
                                 depth := l0 * sz[i0] + l1 * sz[i1] + l2 * sz[i2];
                                 idx := py * W + px;
                                 if depth < zbuf[idx] {
@@ -315,18 +296,14 @@ bench_raster :: () {
                                     color[idx] = cast(u8)(cast(s64)(inten * 255.0));
                                 }
                             }
-                            px += 1;
                         }
-                        py += 1;
                     }
                 }
             }
         }
 
         frame_sum: u64 = 0;
-        for c: 0..W*H-1 {
-            frame_sum += cast(u64) color[c];
-        }
+        for c: 0..W*H-1  frame_sum += cast(u64) color[c];
         checksum = checksum * 1000003 + frame_sum;
     }
 
@@ -360,11 +337,9 @@ bench_ptrchase :: () {
     for k: 0..N-1  next[cast(s64) order[k]] = order[(k + 1) % N];
     sum: u64 = 0;
     p: s64 = 0;
-    h := 0;
-    while h < HOPS {
+    for 0..HOPS-1 {
         p = cast(s64) next[p];
         sum = (sum + cast(u64) p) & 0xFFFFFFFF;
-        h += 1;
     }
     print("checksum %\n", sum);
 }
@@ -414,8 +389,6 @@ bench_bst :: () {
         key := x & 0x7FFFFFFF;
         nn := New(BstNode);
         nn.key = key;
-        nn.left = null;
-        nn.right = null;
         if root == null {
             root = nn;
             continue;
@@ -554,16 +527,10 @@ bench_dispatch :: () {
         code[i] = cast(u8)((x & 0x7FFFFFFF) % 4);
         operand[i] = cast(u32) x;
     }
-    fns: [4](a: u64, b: u64) -> u64;
-    fns[0] = op_add;
-    fns[1] = op_xor;
-    fns[2] = op_mul;
-    fns[3] = op_sub;
+    fns: [4](a: u64, b: u64) -> u64 = .[op_add, op_xor, op_mul, op_sub];
     acc: u64 = 2166136261;
     for r: 0..R-1 {
-        for i: 0..N-1 {
-            acc = fns[cast(s64) code[i]](acc, cast(u64) operand[i]);
-        }
+        for i: 0..N-1  acc = fns[cast(s64) code[i]](acc, cast(u64) operand[i]);
     }
     print("checksum %\n", acc);
 }
@@ -591,9 +558,7 @@ bench_collatz :: () {
 
 streq :: (a: string, b: string) -> bool {
     if a.count != b.count return false;
-    for i: 0..a.count-1 {
-        if a[i] != b[i] return false;
-    }
+    for i: 0..a.count-1  if a[i] != b[i] return false;
     return true;
 }
 

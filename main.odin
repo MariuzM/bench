@@ -19,11 +19,7 @@ fib :: proc(n: u64) -> u64 {
 
 bench_fib :: proc() {
 	total: u64 = 0
-	n: u64 = 30
-	for n <= 42 {
-		total += fib(n)
-		n += 1
-	}
+	for n: u64 = 30; n <= 42; n += 1 do total += fib(n)
 	fmt.printf("checksum %d\n", total)
 }
 
@@ -36,8 +32,7 @@ bench_mandelbrot :: proc() {
 		y0 := (f64(py) / f64(H)) * 4.0 - 2.0
 		for px := 0; px < W; px += 1 {
 			x0 := (f64(px) / f64(W)) * 4.0 - 2.5
-			x: f64 = 0
-			y: f64 = 0
+			x, y: f64 = 0, 0
 			it: u64 = 0
 			for x * x + y * y <= 4.0 && it < MAX_IT {
 				xt := x * x - y * y + x0
@@ -78,9 +73,7 @@ bench_matmul :: proc() {
 	}
 
 	sum: i64 = 0
-	for i := 0; i < N * N; i += 1 {
-		sum += c[i]
-	}
+	for i := 0; i < N * N; i += 1 do sum += c[i]
 	fmt.printf("checksum %d\n", sum)
 }
 
@@ -94,24 +87,19 @@ bench_sieve :: proc() {
 
 	for i := 2; i * i < N; i += 1 {
 		if sieve[i] == 1 {
-			for j := i * i; j < N; j += i {
-				sieve[j] = 0
-			}
+			for j := i * i; j < N; j += i do sieve[j] = 0
 		}
 	}
 
 	count: u64 = 0
-	for i := 0; i < N; i += 1 {
-		count += u64(sieve[i])
-	}
+	for i := 0; i < N; i += 1 do count += u64(sieve[i])
 	fmt.printf("checksum %d\n", count)
 }
 
 quicksort :: proc(arr: []u64, lo: int, hi: int) {
 	if lo >= hi do return
 	pivot := arr[(lo + hi) / 2]
-	i := lo
-	j := hi
+	i, j := lo, hi
 	for i <= j {
 		for arr[i] < pivot do i += 1
 		for arr[j] > pivot do j -= 1
@@ -141,9 +129,7 @@ bench_sort :: proc() {
 	quicksort(arr, 0, N - 1)
 
 	cs: u64 = 0
-	for i := 0; i < N; i += 1 {
-		cs = cs * 1000003 + arr[i]
-	}
+	for i := 0; i < N; i += 1 do cs = cs * 1000003 + arr[i]
 	fmt.printf("checksum %d\n", cs)
 }
 
@@ -155,8 +141,7 @@ bench_sort :: proc() {
 
 r_floor :: proc(y: f64) -> f64 {
 	f := f64(i64(y))
-	if f > y do return f - 1.0
-	return f
+	return f > y ? f - 1.0 : f
 }
 
 r_sin :: proc(xin: f64) -> f64 {
@@ -234,9 +219,7 @@ bench_raster :: proc() {
 		sxr := r_sin(axx)
 
 		for v := 0; v < nv; v += 1 {
-			px0 := bx[v]
-			py0 := by[v]
-			pz0 := bz[v]
+			px0, py0, pz0 := bx[v], by[v], bz[v]
 			rx := px0 * cy + pz0 * syr
 			rz := -px0 * syr + pz0 * cy
 			ry := py0
@@ -252,10 +235,7 @@ bench_raster :: proc() {
 			si[v] = inten
 		}
 
-		for c := 0; c < W * H; c += 1 {
-			color[c] = 0
-			zbuf[c] = 1.0e30
-		}
+		for c := 0; c < W * H; c += 1 {color[c] = 0; zbuf[c] = 1.0e30}
 
 		for ri := 0; ri < RINGS; ri += 1 {
 			for sj := 0; sj < SECTORS; sj += 1 {
@@ -263,9 +243,7 @@ bench_raster :: proc() {
 				b := a + (SECTORS + 1)
 				tris := [2][3]int{{a, b, a + 1}, {a + 1, b, b + 1}}
 				for t := 0; t < 2; t += 1 {
-					i0 := tris[t][0]
-					i1 := tris[t][1]
-					i2 := tris[t][2]
+					i0, i1, i2 := tris[t][0], tris[t][1], tris[t][2]
 					area := edge(sx[i0], sy[i0], sx[i1], sy[i1], sx[i2], sy[i2])
 					if area <= 0.0 do continue
 					mnx := sx[i0]
@@ -284,10 +262,7 @@ bench_raster :: proc() {
 					if mxx > f64(W - 1) do mxx = f64(W - 1)
 					if mny < 0.0 do mny = 0.0
 					if mxy > f64(H - 1) do mxy = f64(H - 1)
-					x0 := int(mnx)
-					x1 := int(mxx)
-					y0 := int(mny)
-					y1 := int(mxy)
+					x0, x1, y0, y1 := int(mnx), int(mxx), int(mny), int(mxy)
 					for py := y0; py <= y1; py += 1 {
 						pcy := f64(py) + 0.5
 						for px := x0; px <= x1; px += 1 {
@@ -296,9 +271,7 @@ bench_raster :: proc() {
 							w1 := edge(sx[i2], sy[i2], sx[i0], sy[i0], pcx, pcy)
 							w2 := edge(sx[i0], sy[i0], sx[i1], sy[i1], pcx, pcy)
 							if w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0 {
-								l0 := w0 / area
-								l1 := w1 / area
-								l2 := w2 / area
+								l0, l1, l2 := w0 / area, w1 / area, w2 / area
 								depth := l0 * sz[i0] + l1 * sz[i1] + l2 * sz[i2]
 								idx := py * W + px
 								if depth < zbuf[idx] {
@@ -316,9 +289,7 @@ bench_raster :: proc() {
 		}
 
 		frame_sum: u64 = 0
-		for c := 0; c < W * H; c += 1 {
-			frame_sum += u64(color[c])
-		}
+		for c := 0; c < W * H; c += 1 do frame_sum += u64(color[c])
 		checksum = checksum * 1000003 + frame_sum
 	}
 
@@ -347,8 +318,7 @@ bench_ptrchase :: proc() {
 		order[j] = t
 	}
 	for k := 0; k < N; k += 1 do next[int(order[k])] = order[(k + 1) % N]
-	sum: u32 = 0
-	p: u32 = 0
+	sum, p: u32 = 0, 0
 	for h := 0; h < HOPS; h += 1 {
 		p = next[int(p)]
 		sum += p
@@ -408,16 +378,10 @@ bench_bst :: proc() {
 		cur := root
 		for {
 			if key < cur.key {
-				if cur.left == nil {
-					cur.left = nn
-					break
-				}
+				if cur.left == nil {cur.left = nn; break}
 				cur = cur.left
 			} else {
-				if cur.right == nil {
-					cur.right = nn
-					break
-				}
+				if cur.right == nil {cur.right = nn; break}
 				cur = cur.right
 			}
 		}
@@ -466,8 +430,7 @@ bench_rle :: proc() {
 	}
 	h: u32 = 2166136261
 	for r := 0; r < R; r += 1 {
-		o := 0
-		p := 0
+		o, p := 0, 0
 		for p < N {
 			v := buf[p]
 			run := 1
@@ -477,12 +440,9 @@ bench_rle :: proc() {
 			o += 2
 			p += run
 		}
-		for k := 0; k < o; k += 1 {
-			h ~= u32(out[k])
-			h *= 16777619
-		}
-		h ~= u32(o % 256);          h *= 16777619
-		h ~= u32((o / 256) % 256);  h *= 16777619
+		for k := 0; k < o; k += 1 {h ~= u32(out[k]); h *= 16777619}
+		h ~= u32(o % 256); h *= 16777619
+		h ~= u32((o / 256) % 256); h *= 16777619
 		h ~= u32((o / 65536) % 256); h *= 16777619
 		h ~= u32((o / 16777216) % 256); h *= 16777619
 	}
@@ -508,9 +468,7 @@ bench_base64 :: proc() {
 	h: u32 = 2166136261
 	for r := 0; r < R; r += 1 {
 		for i := 0; i + 2 < N; i += 3 {
-			b0 := u32(buf[i])
-			b1 := u32(buf[i + 1])
-			b2 := u32(buf[i + 2])
+			b0, b1, b2 := u32(buf[i]), u32(buf[i + 1]), u32(buf[i + 2])
 			i0 := b0 / 4
 			i1 := (b0 & 3) * 16 + b1 / 16
 			i2 := (b1 & 15) * 4 + b2 / 64
@@ -550,9 +508,7 @@ bench_dispatch :: proc() {
 	fns := [4]proc(_: u32, _: u32) -> u32{op_add, op_xor, op_mul, op_sub}
 	acc: u32 = 2166136261
 	for r := 0; r < R; r += 1 {
-		for i := 0; i < N; i += 1 {
-			acc = fns[int(code[i])](acc, operand[i])
-		}
+		for i := 0; i < N; i += 1 do acc = fns[int(code[i])](acc, operand[i])
 	}
 	fmt.printf("checksum %d\n", acc)
 }
@@ -564,11 +520,7 @@ bench_collatz :: proc() {
 		n := i
 		steps: u64 = 0
 		for n != 1 {
-			if n % 2 == 0 {
-				n = n / 2
-			} else {
-				n = 3 * n + 1
-			}
+			n = n % 2 == 0 ? n / 2 : 3 * n + 1
 			steps += 1
 		}
 		total += steps

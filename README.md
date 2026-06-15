@@ -144,7 +144,7 @@ better).
 | ------------ | ------- | ------- | ------------- | --------- | ------ | ------ | ------ |
 | binary size  | 0.03 MB | 0.04 MB | 4.6 MB        | n/a       | 0.2 MB | 0.4 MB | 0.4 MB |
 | compile time | 0.14 s  | 0.48 s  | 10.00 s       | n/a       | 1.44 s | 0.33 s | 5.83 s |
-| code SLOC    | 564     | 539     | 518           | 531       | 531    | 573    | 593    |
+| code SLOC    | 469     | 447     | 483           | 488       | 483    | 547    | 524    |
 
 `code SLOC` counts non-blank, non-comment source lines (all seven suites
 implement the identical thirteen benchmarks, so this is a fair conciseness
@@ -206,12 +206,14 @@ binary or compile step.
   for `<iostream>`/`<vector>` template instantiation (~0.5 s). OpenJai is the
   slowest to build (~10 s), followed by Zig's full `ReleaseFast` LLVM pipeline
   (~5.8 s).
-- **Jai is the most concise** at 518 SLOC, just ahead of JavaScript and Odin
-  (both 531); **Zig is now the most verbose** (593), just past Rust (573). The
-  gap is mostly bookkeeping: Zig needs explicit `@intCast`/`@floatFromInt` casts
-  (and the new integer benchmarks add many), and Rust spells out `let mut` and
-  `.wrapping_*()`, while Jai, Odin and JS lean on terser implicit conversions and
-  wrapping arithmetic.
+- **C++ is the most concise** at 447 SLOC, just ahead of C (469) and the
+  Jai/Odin pair (both 483), with JavaScript close behind (488); **Rust is now
+  the most verbose** (547), past Zig (524). The gap is mostly bookkeeping and
+  formatting: Rust spells out `let mut` and `.wrapping_*()` and `rustfmt` puts
+  every guard and binding on its own line, while Zig needs explicit
+  `@intCast`/`@floatFromInt` casts on the integer benchmarks. The C family, Odin
+  and Jai lean on terser implicit conversions, wrapping arithmetic, and
+  brace-less single-statement bodies.
 - **JavaScript (Node V8) is more competitive than expected** on the hot numeric
   and integer loops — `matmul`, `sieve`, `mandelbrot`, `hash` and `base64` land
   within a few× of native — but pays heavily on branchy/recursive work

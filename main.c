@@ -11,9 +11,7 @@
 #include <stdint.h>
 
 static uint64_t fib(uint64_t n) {
-    if (n < 2) {
-        return n;
-    }
+    if (n < 2) return n;
     return fib(n - 1) + fib(n - 2);
 }
 
@@ -34,8 +32,7 @@ static void bench_mandelbrot(void) {
         double y0 = ((double)py / (double)H) * 4.0 - 2.0;
         for (size_t px = 0; px < W; px++) {
             double x0 = ((double)px / (double)W) * 4.0 - 2.5;
-            double x = 0.0;
-            double y = 0.0;
+            double x = 0.0, y = 0.0;
             uint64_t it = 0;
             while (x * x + y * y <= 4.0 && it < MAX_IT) {
                 double xt = x * x - y * y + x0;
@@ -73,9 +70,7 @@ static void bench_matmul(void) {
     }
 
     int64_t sum = 0;
-    for (size_t i = 0; i < N * N; i++) {
-        sum += c[i];
-    }
+    for (size_t i = 0; i < N * N; i++) sum += c[i];
     printf("checksum %lld\n", (long long)sum);
 
     free(a);
@@ -87,40 +82,26 @@ static void bench_sieve(void) {
     const size_t N = 50000000;
     uint8_t *sieve = malloc(N);
     memset(sieve, 1, N);
-    sieve[0] = 0;
-    sieve[1] = 0;
+    sieve[0] = sieve[1] = 0;
 
-    for (size_t i = 2; i * i < N; i++) {
-        if (sieve[i] == 1) {
-            for (size_t j = i * i; j < N; j += i) {
-                sieve[j] = 0;
-            }
-        }
-    }
+    for (size_t i = 2; i * i < N; i++)
+        if (sieve[i] == 1)
+            for (size_t j = i * i; j < N; j += i) sieve[j] = 0;
 
     uint64_t count = 0;
-    for (size_t i = 0; i < N; i++) {
-        count += sieve[i];
-    }
+    for (size_t i = 0; i < N; i++) count += sieve[i];
     printf("checksum %llu\n", (unsigned long long)count);
 
     free(sieve);
 }
 
 static void quicksort(uint64_t *arr, int64_t lo, int64_t hi) {
-    if (lo >= hi) {
-        return;
-    }
+    if (lo >= hi) return;
     uint64_t pivot = arr[(lo + hi) / 2];
-    int64_t i = lo;
-    int64_t j = hi;
+    int64_t i = lo, j = hi;
     while (i <= j) {
-        while (arr[i] < pivot) {
-            i += 1;
-        }
-        while (arr[j] > pivot) {
-            j -= 1;
-        }
+        while (arr[i] < pivot) i += 1;
+        while (arr[j] > pivot) j -= 1;
         if (i <= j) {
             uint64_t tmp = arr[i];
             arr[i] = arr[j];
@@ -169,14 +150,10 @@ static void bench_sort(void) {
 
 static double r_floor(double y) {
     double f = (double)(int64_t)y;
-    if (f > y) {
-        return f - 1.0;
-    }
-    return f;
+    return f > y ? f - 1.0 : f;
 }
 
 static double r_sin(double x) {
-    const double PI = 3.141592653589793;
     const double TWO_PI = 6.283185307179586;
     double k = r_floor(x / TWO_PI + 0.5);
     x = x - k * TWO_PI;
@@ -189,7 +166,6 @@ static double r_sin(double x) {
     p = 1.0 / 120.0 + x2 * p;
     p = -1.0 / 6.0 + x2 * p;
     p = 1.0 + x2 * p;
-    (void)PI;
     return x * p;
 }
 
@@ -206,9 +182,7 @@ static void bench_raster(void) {
     const double FOCAL = 500.0;
     const double CAM_DIST = 3.0;
 
-    static double bx[RASTER_NV];
-    static double by[RASTER_NV];
-    static double bz[RASTER_NV];
+    static double bx[RASTER_NV], by[RASTER_NV], bz[RASTER_NV];
     int nv = 0;
     for (int i = 0; i <= RASTER_RINGS; i++) {
         double theta = 3.141592653589793 * ((double)i / (double)RASTER_RINGS);
@@ -225,10 +199,7 @@ static void bench_raster(void) {
         }
     }
 
-    static double sx[RASTER_NV];
-    static double sy[RASTER_NV];
-    static double sz[RASTER_NV];
-    static double si[RASTER_NV];
+    static double sx[RASTER_NV], sy[RASTER_NV], sz[RASTER_NV], si[RASTER_NV];
 
     unsigned char *color = malloc(RASTER_W * RASTER_H);
     double *zbuf = malloc(RASTER_W * RASTER_H * sizeof(double));
@@ -244,18 +215,14 @@ static void bench_raster(void) {
         double sxr = r_sin(ax);
 
         for (int v = 0; v < nv; v++) {
-            double px0 = bx[v];
-            double py0 = by[v];
-            double pz0 = bz[v];
+            double px0 = bx[v], py0 = by[v], pz0 = bz[v];
             double rx = px0 * cy + pz0 * syr;
             double rz = -px0 * syr + pz0 * cy;
             double ry = py0;
             double ry2 = ry * cx - rz * sxr;
             double rz2 = ry * sxr + rz * cx;
             double inten = -rz2;
-            if (inten < 0.0) {
-                inten = 0.0;
-            }
+            if (inten < 0.0) inten = 0.0;
             double zc = rz2 + CAM_DIST;
             double invz = 1.0 / zc;
             sx[v] = rx * invz * FOCAL + (double)RASTER_W * 0.5;
@@ -264,10 +231,7 @@ static void bench_raster(void) {
             si[v] = inten;
         }
 
-        for (int i = 0; i < RASTER_W * RASTER_H; i++) {
-            color[i] = 0;
-            zbuf[i] = 1.0e30;
-        }
+        for (int i = 0; i < RASTER_W * RASTER_H; i++) { color[i] = 0; zbuf[i] = 1.0e30; }
 
         for (int ri = 0; ri < RASTER_RINGS; ri++) {
             for (int sj = 0; sj < RASTER_SECTORS; sj++) {
@@ -275,13 +239,9 @@ static void bench_raster(void) {
                 int b = a + (RASTER_SECTORS + 1);
                 int tris[2][3] = {{a, b, a + 1}, {a + 1, b, b + 1}};
                 for (int t = 0; t < 2; t++) {
-                    int i0 = tris[t][0];
-                    int i1 = tris[t][1];
-                    int i2 = tris[t][2];
+                    int i0 = tris[t][0], i1 = tris[t][1], i2 = tris[t][2];
                     double area = edge(sx[i0], sy[i0], sx[i1], sy[i1], sx[i2], sy[i2]);
-                    if (area <= 0.0) {
-                        continue;
-                    }
+                    if (area <= 0.0) continue;
                     double mnx = sx[i0];
                     if (sx[i1] < mnx) mnx = sx[i1];
                     if (sx[i2] < mnx) mnx = sx[i2];
@@ -298,10 +258,7 @@ static void bench_raster(void) {
                     if (mxx > (double)(RASTER_W - 1)) mxx = (double)(RASTER_W - 1);
                     if (mny < 0.0) mny = 0.0;
                     if (mxy > (double)(RASTER_H - 1)) mxy = (double)(RASTER_H - 1);
-                    int x0 = (int)mnx;
-                    int x1 = (int)mxx;
-                    int y0 = (int)mny;
-                    int y1 = (int)mxy;
+                    int x0 = (int)mnx, x1 = (int)mxx, y0 = (int)mny, y1 = (int)mxy;
                     for (int py = y0; py <= y1; py++) {
                         double pcy = (double)py + 0.5;
                         for (int px = x0; px <= x1; px++) {
@@ -310,9 +267,7 @@ static void bench_raster(void) {
                             double w1 = edge(sx[i2], sy[i2], sx[i0], sy[i0], pcx, pcy);
                             double w2 = edge(sx[i0], sy[i0], sx[i1], sy[i1], pcx, pcy);
                             if (w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0) {
-                                double l0 = w0 / area;
-                                double l1 = w1 / area;
-                                double l2 = w2 / area;
+                                double l0 = w0 / area, l1 = w1 / area, l2 = w2 / area;
                                 double depth = l0 * sz[i0] + l1 * sz[i1] + l2 * sz[i2];
                                 int idx = py * RASTER_W + px;
                                 if (depth < zbuf[idx]) {
@@ -330,9 +285,7 @@ static void bench_raster(void) {
         }
 
         uint64_t frame_sum = 0;
-        for (int i = 0; i < RASTER_W * RASTER_H; i++) {
-            frame_sum += color[i];
-        }
+        for (int i = 0; i < RASTER_W * RASTER_H; i++) frame_sum += color[i];
         checksum = checksum * 1000003 + frame_sum;
     }
 
@@ -352,9 +305,7 @@ static void bench_ptrchase(void) {
     const uint64_t HOPS = 4000000;
     uint32_t *order = malloc(N * sizeof(uint32_t));
     uint32_t *next = malloc(N * sizeof(uint32_t));
-    for (size_t i = 0; i < N; i++) {
-        order[i] = (uint32_t)i;
-    }
+    for (size_t i = 0; i < N; i++) order[i] = (uint32_t)i;
     uint32_t x = 1;
     for (size_t i = N - 1; i >= 1; i--) {
         x = x * 1664525u + 1013904223u;
@@ -363,11 +314,8 @@ static void bench_ptrchase(void) {
         order[i] = order[j];
         order[j] = t;
     }
-    for (size_t k = 0; k < N; k++) {
-        next[order[k]] = order[(k + 1) % N];
-    }
-    uint32_t sum = 0;
-    uint32_t p = 0;
+    for (size_t k = 0; k < N; k++) next[order[k]] = order[(k + 1) % N];
+    uint32_t sum = 0, p = 0;
     for (uint64_t h = 0; h < HOPS; h++) {
         p = next[p];
         sum += p;
@@ -421,26 +369,15 @@ static void bench_bst(void) {
         x = x * 1664525u + 1013904223u;
         uint32_t key = x & 0x7FFFFFFFu;
         bst_node *nn = malloc(sizeof(bst_node));
-        nn->key = key;
-        nn->left = NULL;
-        nn->right = NULL;
-        if (root == NULL) {
-            root = nn;
-            continue;
-        }
+        *nn = (bst_node){key, NULL, NULL};
+        if (root == NULL) { root = nn; continue; }
         bst_node *cur = root;
         for (;;) {
             if (key < cur->key) {
-                if (cur->left == NULL) {
-                    cur->left = nn;
-                    break;
-                }
+                if (cur->left == NULL) { cur->left = nn; break; }
                 cur = cur->left;
             } else {
-                if (cur->right == NULL) {
-                    cur->right = nn;
-                    break;
-                }
+                if (cur->right == NULL) { cur->right = nn; break; }
                 cur = cur->right;
             }
         }
@@ -454,14 +391,8 @@ static void bench_bst(void) {
         bst_node *cur = root;
         while (cur != NULL) {
             steps += 1;
-            if (key == cur->key) {
-                break;
-            }
-            if (key < cur->key) {
-                cur = cur->left;
-            } else {
-                cur = cur->right;
-            }
+            if (key == cur->key) break;
+            cur = key < cur->key ? cur->left : cur->right;
         }
         cs = cs * 1000003u + steps;
     }
@@ -483,9 +414,7 @@ static void bench_rle(void) {
         x = x * 1664525u + 1013904223u;
         uint8_t v = (uint8_t)(x & 0xFFu);
         uint32_t rl = ((x & 0x7FFFFFFFu) % 16u) + 1u;
-        for (uint32_t c = 0; c < rl && i < N; c++) {
-            buf[i++] = v;
-        }
+        for (uint32_t c = 0; c < rl && i < N; c++) buf[i++] = v;
     }
     uint32_t h = 2166136261u;
     for (int r = 0; r < R; r++) {
@@ -494,9 +423,7 @@ static void bench_rle(void) {
         while (p < N) {
             uint8_t v = buf[p];
             size_t run = 1;
-            while (p + run < N && buf[p + run] == v && run < 255) {
-                run++;
-            }
+            while (p + run < N && buf[p + run] == v && run < 255) run++;
             out[o++] = (uint8_t)run;
             out[o++] = v;
             p += run;
@@ -597,14 +524,9 @@ static void bench_collatz(void) {
     const uint64_t N = 3000000;
     uint64_t total = 0;
     for (uint64_t i = 1; i <= N; i++) {
-        uint64_t n = i;
-        uint64_t steps = 0;
+        uint64_t n = i, steps = 0;
         while (n != 1) {
-            if (n % 2 == 0) {
-                n = n / 2;
-            } else {
-                n = 3 * n + 1;
-            }
+            n = n % 2 == 0 ? n / 2 : 3 * n + 1;
             steps += 1;
         }
         total += steps;
@@ -612,40 +534,24 @@ static void bench_collatz(void) {
     printf("checksum %llu\n", (unsigned long long)total);
 }
 
+static const struct { const char *name; void (*fn)(void); } BENCHES[] = {
+    {"fib", bench_fib}, {"mandelbrot", bench_mandelbrot}, {"matmul", bench_matmul},
+    {"sieve", bench_sieve}, {"sort", bench_sort}, {"collatz", bench_collatz},
+    {"raster", bench_raster}, {"ptrchase", bench_ptrchase}, {"hash", bench_hash},
+    {"bst", bench_bst}, {"rle", bench_rle}, {"base64", bench_base64},
+    {"dispatch", bench_dispatch},
+};
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         printf("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster|ptrchase|hash|bst|rle|base64|dispatch>\n");
         return 0;
     }
-    const char *name = argv[1];
-    if (strcmp(name, "fib") == 0) {
-        bench_fib();
-    } else if (strcmp(name, "mandelbrot") == 0) {
-        bench_mandelbrot();
-    } else if (strcmp(name, "matmul") == 0) {
-        bench_matmul();
-    } else if (strcmp(name, "sieve") == 0) {
-        bench_sieve();
-    } else if (strcmp(name, "sort") == 0) {
-        bench_sort();
-    } else if (strcmp(name, "collatz") == 0) {
-        bench_collatz();
-    } else if (strcmp(name, "raster") == 0) {
-        bench_raster();
-    } else if (strcmp(name, "ptrchase") == 0) {
-        bench_ptrchase();
-    } else if (strcmp(name, "hash") == 0) {
-        bench_hash();
-    } else if (strcmp(name, "bst") == 0) {
-        bench_bst();
-    } else if (strcmp(name, "rle") == 0) {
-        bench_rle();
-    } else if (strcmp(name, "base64") == 0) {
-        bench_base64();
-    } else if (strcmp(name, "dispatch") == 0) {
-        bench_dispatch();
-    } else {
-        printf("unknown benchmark: %s\n", name);
-    }
+    for (size_t i = 0; i < sizeof(BENCHES) / sizeof(BENCHES[0]); i++)
+        if (strcmp(argv[1], BENCHES[i].name) == 0) {
+            BENCHES[i].fn();
+            return 0;
+        }
+    printf("unknown benchmark: %s\n", argv[1]);
     return 0;
 }

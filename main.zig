@@ -15,9 +15,7 @@ fn fib(n: u64) u64 {
 fn benchFib() void {
     var total: u64 = 0;
     var n: u64 = 30;
-    while (n <= 42) : (n += 1) {
-        total +%= fib(n);
-    }
+    while (n <= 42) : (n += 1) total +%= fib(n);
     std.debug.print("checksum {d}\n", .{total});
 }
 
@@ -26,11 +24,9 @@ fn benchMandelbrot() void {
     const H: usize = 1200;
     const MAX_IT: u64 = 1000;
     var sum: u64 = 0;
-    var py: usize = 0;
-    while (py < H) : (py += 1) {
+    for (0..H) |py| {
         const y0 = (@as(f64, @floatFromInt(py)) / @as(f64, H)) * 4.0 - 2.0;
-        var px: usize = 0;
-        while (px < W) : (px += 1) {
+        for (0..W) |px| {
             const x0 = (@as(f64, @floatFromInt(px)) / @as(f64, W)) * 4.0 - 2.5;
             var x: f64 = 0;
             var y: f64 = 0;
@@ -56,31 +52,25 @@ fn benchMatmul() !void {
     const c = try alloc.alloc(i64, N * N);
     defer alloc.free(c);
 
-    var i: usize = 0;
-    while (i < N) : (i += 1) {
-        var j: usize = 0;
-        while (j < N) : (j += 1) {
+    for (0..N) |i| {
+        for (0..N) |j| {
             a[i * N + j] = @as(i64, @intCast((i * j) % 7)) - 3;
             b[i * N + j] = @as(i64, @intCast((i + j) % 5)) - 2;
             c[i * N + j] = 0;
         }
     }
 
-    i = 0;
-    while (i < N) : (i += 1) {
-        var k: usize = 0;
-        while (k < N) : (k += 1) {
+    for (0..N) |i| {
+        for (0..N) |k| {
             const aik = a[i * N + k];
-            var j: usize = 0;
-            while (j < N) : (j += 1) {
+            for (0..N) |j| {
                 c[i * N + j] += aik * b[k * N + j];
             }
         }
     }
 
     var sum: i64 = 0;
-    i = 0;
-    while (i < N * N) : (i += 1) {
+    for (0..N * N) |i| {
         sum +%= c[i];
     }
     std.debug.print("checksum {d}\n", .{sum});
@@ -99,17 +89,12 @@ fn benchSieve() !void {
     while (i * i < N) : (i += 1) {
         if (sieve[i] == 1) {
             var j: usize = i * i;
-            while (j < N) : (j += i) {
-                sieve[j] = 0;
-            }
+            while (j < N) : (j += i) sieve[j] = 0;
         }
     }
 
     var count: u64 = 0;
-    i = 0;
-    while (i < N) : (i += 1) {
-        count += sieve[i];
-    }
+    for (0..N) |k| count += sieve[k];
     std.debug.print("checksum {d}\n", .{count});
 }
 
@@ -140,8 +125,7 @@ fn benchSort() !void {
     defer alloc.free(arr);
 
     var state: u64 = 88172645463325252;
-    var i: usize = 0;
-    while (i < N) : (i += 1) {
+    for (0..N) |i| {
         state = state *% 6364136223846793005 +% 1442695040888963407;
         arr[i] = state & 0x7FFFFFFFFFFFFFFF;
     }
@@ -149,10 +133,7 @@ fn benchSort() !void {
     quicksort(arr, 0, @as(isize, N) - 1);
 
     var cs: u64 = 0;
-    i = 0;
-    while (i < N) : (i += 1) {
-        cs = cs *% 1000003 +% arr[i];
-    }
+    for (0..N) |i| cs = cs *% 1000003 +% arr[i];
     std.debug.print("checksum {d}\n", .{cs});
 }
 
@@ -164,8 +145,7 @@ fn benchSort() !void {
 
 fn rFloor(y: f64) f64 {
     const f: f64 = @floatFromInt(@as(i64, @intFromFloat(y)));
-    if (f > y) return f - 1.0;
-    return f;
+    return if (f > y) f - 1.0 else f;
 }
 
 fn rSin(xin: f64) f64 {
@@ -207,13 +187,11 @@ fn benchRaster() !void {
     var by: [NV]f64 = undefined;
     var bz: [NV]f64 = undefined;
     var nv: usize = 0;
-    var i: usize = 0;
-    while (i <= RINGS) : (i += 1) {
+    for (0..RINGS + 1) |i| {
         const theta = 3.141592653589793 * (@as(f64, @floatFromInt(i)) / @as(f64, @floatFromInt(RINGS)));
         const st = rSin(theta);
         const ct = rCos(theta);
-        var j: usize = 0;
-        while (j <= SECTORS) : (j += 1) {
+        for (0..SECTORS + 1) |j| {
             const phi = 6.283185307179586 * (@as(f64, @floatFromInt(j)) / @as(f64, @floatFromInt(SECTORS)));
             const sp = rSin(phi);
             const cp = rCos(phi);
@@ -237,8 +215,7 @@ fn benchRaster() !void {
 
     var checksum: u64 = 0;
 
-    var f: usize = 0;
-    while (f < FRAMES) : (f += 1) {
+    for (0..FRAMES) |f| {
         const ang = @as(f64, @floatFromInt(f)) * 0.0125;
         const cy = rCos(ang);
         const syr = rSin(ang);
@@ -246,8 +223,7 @@ fn benchRaster() !void {
         const cx = rCos(axx);
         const sxr = rSin(axx);
 
-        var v: usize = 0;
-        while (v < nv) : (v += 1) {
+        for (0..nv) |v| {
             const px0 = bx[v];
             const py0 = by[v];
             const pz0 = bz[v];
@@ -266,21 +242,17 @@ fn benchRaster() !void {
             si[v] = inten;
         }
 
-        var c: usize = 0;
-        while (c < W * H) : (c += 1) {
+        for (0..W * H) |c| {
             color[c] = 0;
             zbuf[c] = 1.0e30;
         }
 
-        var ri: usize = 0;
-        while (ri < RINGS) : (ri += 1) {
-            var sj: usize = 0;
-            while (sj < SECTORS) : (sj += 1) {
+        for (0..RINGS) |ri| {
+            for (0..SECTORS) |sj| {
                 const a = ri * (SECTORS + 1) + sj;
                 const b = a + (SECTORS + 1);
                 const tris = [2][3]usize{ .{ a, b, a + 1 }, .{ a + 1, b, b + 1 } };
-                var t: usize = 0;
-                while (t < 2) : (t += 1) {
+                for (0..2) |t| {
                     const ia = tris[t][0];
                     const ib = tris[t][1];
                     const ic = tris[t][2];
@@ -306,11 +278,9 @@ fn benchRaster() !void {
                     const x1: usize = @intFromFloat(mxx);
                     const y0: usize = @intFromFloat(mny);
                     const y1: usize = @intFromFloat(mxy);
-                    var py: usize = y0;
-                    while (py <= y1) : (py += 1) {
+                    for (y0..y1 + 1) |py| {
                         const pcy = @as(f64, @floatFromInt(py)) + 0.5;
-                        var px: usize = x0;
-                        while (px <= x1) : (px += 1) {
+                        for (x0..x1 + 1) |px| {
                             const pcx = @as(f64, @floatFromInt(px)) + 0.5;
                             const w0 = edge(sx[ib], sy[ib], sx[ic], sy[ic], pcx, pcy);
                             const w1 = edge(sx[ic], sy[ic], sx[ia], sy[ia], pcx, pcy);
@@ -336,10 +306,7 @@ fn benchRaster() !void {
         }
 
         var frame_sum: u64 = 0;
-        var p: usize = 0;
-        while (p < W * H) : (p += 1) {
-            frame_sum +%= color[p];
-        }
+        for (0..W * H) |p| frame_sum +%= color[p];
         checksum = checksum *% 1000003 +% frame_sum;
     }
 
@@ -359,10 +326,9 @@ fn benchPtrchase() !void {
     defer alloc.free(order);
     const next = try alloc.alloc(u32, N);
     defer alloc.free(next);
-    var i: usize = 0;
-    while (i < N) : (i += 1) order[i] = @intCast(i);
+    for (0..N) |i| order[i] = @intCast(i);
     var x: u32 = 1;
-    i = N - 1;
+    var i: usize = N - 1;
     while (i >= 1) : (i -= 1) {
         x = x *% 1664525 +% 1013904223;
         const j: usize = (x & 0x7FFFFFFF) % (@as(u32, @intCast(i)) + 1);
@@ -370,12 +336,10 @@ fn benchPtrchase() !void {
         order[i] = order[j];
         order[j] = t;
     }
-    var k: usize = 0;
-    while (k < N) : (k += 1) next[order[k]] = order[(k + 1) % N];
+    for (0..N) |k| next[order[k]] = order[(k + 1) % N];
     var sum: u32 = 0;
     var p: u32 = 0;
-    var h: u64 = 0;
-    while (h < HOPS) : (h += 1) {
+    for (0..HOPS) |_| {
         p = next[p];
         sum +%= p;
     }
@@ -393,16 +357,13 @@ fn benchHash() !void {
     const buf = try alloc.alloc(u8, N);
     defer alloc.free(buf);
     var x: u32 = 12345;
-    var i: usize = 0;
-    while (i < N) : (i += 1) {
+    for (0..N) |i| {
         x = x *% 1664525 +% 1013904223;
         buf[i] = @intCast(x & 0xFF);
     }
     var h: u32 = 2166136261;
-    var r: usize = 0;
-    while (r < R) : (r += 1) {
-        i = 0;
-        while (i < N) : (i += 1) {
+    for (0..R) |_| {
+        for (0..N) |i| {
             h ^= @as(u32, buf[i]);
             h *%= 16777619;
         }
@@ -429,8 +390,7 @@ fn benchBst() !void {
     const alloc = std.heap.smp_allocator;
     var root: ?*BstNode = null;
     var x: u32 = 22222;
-    var n: usize = 0;
-    while (n < M) : (n += 1) {
+    for (0..M) |_| {
         x = x *% 1664525 +% 1013904223;
         const key = x & 0x7FFFFFFF;
         const nn = try alloc.create(BstNode);
@@ -458,8 +418,7 @@ fn benchBst() !void {
     }
     var y: u32 = 99991;
     var cs: u32 = 0;
-    var q: usize = 0;
-    while (q < Q) : (q += 1) {
+    for (0..Q) |_| {
         y = y *% 1664525 +% 1013904223;
         const key = y & 0x7FFFFFFF;
         var steps: u32 = 0;
@@ -499,8 +458,7 @@ fn benchRle() !void {
         }
     }
     var h: u32 = 2166136261;
-    var r: usize = 0;
-    while (r < R) : (r += 1) {
+    for (0..R) |_| {
         var o: usize = 0;
         var p: usize = 0;
         while (p < N) {
@@ -512,8 +470,7 @@ fn benchRle() !void {
             o += 2;
             p += run;
         }
-        var k: usize = 0;
-        while (k < o) : (k += 1) {
+        for (0..o) |k| {
             h ^= @as(u32, out[k]);
             h *%= 16777619;
         }
@@ -543,15 +500,13 @@ fn benchBase64() !void {
     const buf = try alloc.alloc(u8, N);
     defer alloc.free(buf);
     var x: u32 = 44444;
-    var i: usize = 0;
-    while (i < N) : (i += 1) {
+    for (0..N) |i| {
         x = x *% 1664525 +% 1013904223;
         buf[i] = @intCast(x & 0xFF);
     }
     var h: u32 = 2166136261;
-    var r: usize = 0;
-    while (r < R) : (r += 1) {
-        i = 0;
+    for (0..R) |_| {
+        var i: usize = 0;
         while (i + 2 < N) : (i += 3) {
             const b0: u32 = buf[i];
             const b1: u32 = buf[i + 1];
@@ -600,20 +555,15 @@ fn benchDispatch() !void {
     const operand = try alloc.alloc(u32, N);
     defer alloc.free(operand);
     var x: u32 = 55555;
-    var i: usize = 0;
-    while (i < N) : (i += 1) {
+    for (0..N) |i| {
         x = x *% 1664525 +% 1013904223;
         code[i] = @intCast((x & 0x7FFFFFFF) % 4);
         operand[i] = x;
     }
     const fns = [_]*const fn (u32, u32) u32{ &opAdd, &opXor, &opMul, &opSub };
     var acc: u32 = 2166136261;
-    var r: usize = 0;
-    while (r < R) : (r += 1) {
-        i = 0;
-        while (i < N) : (i += 1) {
-            acc = fns[code[i]](acc, operand[i]);
-        }
+    for (0..R) |_| {
+        for (0..N) |i| acc = fns[code[i]](acc, operand[i]);
     }
     std.debug.print("checksum {d}\n", .{acc});
 }
@@ -626,11 +576,7 @@ fn benchCollatz() void {
         var n: u64 = i;
         var steps: u64 = 0;
         while (n != 1) {
-            if (n % 2 == 0) {
-                n = n / 2;
-            } else {
-                n = 3 * n + 1;
-            }
+            n = if (n % 2 == 0) n / 2 else 3 * n + 1;
             steps += 1;
         }
         total +%= steps;
@@ -645,33 +591,18 @@ pub fn main(init: std.process.Init.Minimal) !void {
         std.debug.print("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster|ptrchase|hash|bst|rle|base64|dispatch>\n", .{});
         return;
     };
-    if (std.mem.eql(u8, name, "fib")) {
-        benchFib();
-    } else if (std.mem.eql(u8, name, "mandelbrot")) {
-        benchMandelbrot();
-    } else if (std.mem.eql(u8, name, "matmul")) {
-        try benchMatmul();
-    } else if (std.mem.eql(u8, name, "sieve")) {
-        try benchSieve();
-    } else if (std.mem.eql(u8, name, "sort")) {
-        try benchSort();
-    } else if (std.mem.eql(u8, name, "collatz")) {
-        benchCollatz();
-    } else if (std.mem.eql(u8, name, "raster")) {
-        try benchRaster();
-    } else if (std.mem.eql(u8, name, "ptrchase")) {
-        try benchPtrchase();
-    } else if (std.mem.eql(u8, name, "hash")) {
-        try benchHash();
-    } else if (std.mem.eql(u8, name, "bst")) {
-        try benchBst();
-    } else if (std.mem.eql(u8, name, "rle")) {
-        try benchRle();
-    } else if (std.mem.eql(u8, name, "base64")) {
-        try benchBase64();
-    } else if (std.mem.eql(u8, name, "dispatch")) {
-        try benchDispatch();
-    } else {
-        std.debug.print("unknown benchmark: {s}\n", .{name});
-    }
+    if (std.mem.eql(u8, name, "fib")) return benchFib();
+    if (std.mem.eql(u8, name, "mandelbrot")) return benchMandelbrot();
+    if (std.mem.eql(u8, name, "matmul")) return benchMatmul();
+    if (std.mem.eql(u8, name, "sieve")) return benchSieve();
+    if (std.mem.eql(u8, name, "sort")) return benchSort();
+    if (std.mem.eql(u8, name, "collatz")) return benchCollatz();
+    if (std.mem.eql(u8, name, "raster")) return benchRaster();
+    if (std.mem.eql(u8, name, "ptrchase")) return benchPtrchase();
+    if (std.mem.eql(u8, name, "hash")) return benchHash();
+    if (std.mem.eql(u8, name, "bst")) return benchBst();
+    if (std.mem.eql(u8, name, "rle")) return benchRle();
+    if (std.mem.eql(u8, name, "base64")) return benchBase64();
+    if (std.mem.eql(u8, name, "dispatch")) return benchDispatch();
+    std.debug.print("unknown benchmark: {s}\n", .{name});
 }
