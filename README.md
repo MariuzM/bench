@@ -96,6 +96,21 @@ Output reports, per benchmark, the best-of-N wall time and peak resident memory
 for each language and who won, plus binary size, compile time and source lines
 of code.
 
+### Heatmap
+
+`heatmap.sh` turns the table output into a color-coded `heatmap.html` (no
+dependencies — opens in any browser). Each row is normalized on its own and
+shaded green (the row's best) → yellow → red (≥4× the best), so wins and
+blow-ups are obvious at a glance:
+
+```sh
+./bench.sh > results.txt && ./heatmap.sh results.txt   # from a saved run
+./bench.sh | ./heatmap.sh                              # straight from a pipe
+```
+
+It writes `./heatmap.html` (override with `HEATMAP_OUT=foo.html`) covering the
+time, rasterizer-FPS, peak-memory and binary/compile/SLOC tables.
+
 ## Results
 
 Best of 3 runs on the [test system](#test-system) below (lower is better). The
