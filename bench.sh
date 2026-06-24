@@ -35,8 +35,9 @@ RASTER_FRAMES=240
 BIN="$ROOT/bin"
 mkdir -p "$BIN"
 TMP="$(mktemp -d)"
-# Clean up the temp dir and all build artifacts (bin/, and Jai's build/) on exit.
-trap 'rm -rf "$TMP" "$BIN" "$ROOT/build"' EXIT
+# Clean up the temp dir and all build artifacts (bin/, and Jai's ./main,
+# .build/ and main.dSYM) on exit.
+trap 'rm -rf "$TMP" "$BIN" "$ROOT/.build" "$ROOT/main" "$ROOT/main.dSYM"' EXIT
 
 # --- helpers ---------------------------------------------------------------
 
@@ -121,13 +122,14 @@ BINOF_zig="$BIN/zig_bench"
 BUILD_zig=$(/usr/bin/time -p "$ZIG" build-exe "$ROOT/main.zig" -O ReleaseFast \
   -femit-bin="$BINOF_zig" 2>&1 | awk '/real/ {print $2; exit}')
 
-# Jai's default metaprogram always emits ./build/main and ignores output-path
+# Jai's default metaprogram emits the executable next to the source as ./main
+# (with .build/ intermediates and a main.dSYM bundle) and ignores output-path
 # flags, so build there and copy the result into bin/.
 ( cd "$ROOT" && /usr/bin/time -p "$JAI" main.jai -release -quiet >/dev/null 2>"$TMP/jb"
   awk '/real/ {print $2; exit}' "$TMP/jb" >"$TMP/jbt" )
 BUILD_jai=$(cat "$TMP/jbt")
 BINOF_jai="$BIN/jai_bench"
-cp "$ROOT/build/main" "$BINOF_jai"
+cp "$ROOT/main" "$BINOF_jai"
 
 BINOF_rust="$BIN/rust_bench"
 BUILD_rust=$(/usr/bin/time -p "$RUSTC" -O "$ROOT/main.rs" \

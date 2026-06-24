@@ -4,8 +4,8 @@
 // Benchmark suite. One process runs exactly one benchmark, selected by the
 // command-line argument, so the build script can measure each one's wall-time
 // and peak memory in isolation. Every benchmark prints a single "checksum <n>"
-// line; the Jai and Zig builds must agree on it, which proves both did the
-// same work.
+// line; all seven language builds must agree on it, which proves they all did
+// the same work.
 // ---------------------------------------------------------------------------
 
 fib :: (n: u64) -> u64 {
@@ -14,10 +14,6 @@ fib :: (n: u64) -> u64 {
 }
 
 bench_fib :: () {
-    // Warm-up call: this compiler miscompiles the very first invocation of a
-    // recursive function used in an accumulating expression (it returns 0).
-    // Calling fib once up front primes correct code generation for the loop.
-    if fib(2) == 99 return;
     total: u64 = 0;
     n: u64 = 30;
     while n <= 42 {
@@ -126,11 +122,10 @@ bench_sort :: () {
 
     state: u64 = 88172645463325252;
     for i: 0..N-1 {
-        // Linear congruential generator (multiply + add only). We avoid the
-        // usual xorshift because this compiler's u64 right-shift is arithmetic
-        // (sign-extending), which would diverge from the Zig build. Masking the
-        // top bit keeps values below 2^63 so the signed u64 comparison this
-        // compiler emits still matches an unsigned ordering.
+        // Linear congruential generator (multiply + add only). All seven
+        // languages use the same LCG and mask off the top bit so the keys stay
+        // below 2^63, which keeps the generated stream bit-identical across
+        // every backend.
         state = state * 6364136223846793005 + 1442695040888963407;
         arr[i] = state & 9223372036854775807;
     }
@@ -157,10 +152,7 @@ r_floor :: (y: float64) -> float64 {
 }
 
 r_sin :: (xin: float64) -> float64 {
-    // OpenJai rounds *named* float constants (::) to 32-bit float, so these
-    // must be float64 *variables* to keep the range reduction bit-identical
-    // with the other languages.
-    TWO_PI : float64 = 6.283185307179586;
+    TWO_PI : float64 : 6.283185307179586;
     k := r_floor(xin / TWO_PI + 0.5);
     x := xin - k * TWO_PI;
     x2 := x * x;
@@ -176,7 +168,7 @@ r_sin :: (xin: float64) -> float64 {
 }
 
 r_cos :: (x: float64) -> float64 {
-    HALF_PI : float64 = 1.5707963267948966;
+    HALF_PI : float64 : 1.5707963267948966;
     return r_sin(x + HALF_PI);
 }
 
@@ -314,9 +306,8 @@ bench_raster :: () {
 // Builds one big random permutation cycle, then chases next[p] for many hops.
 // Each load depends on the previous one, so the prefetcher can't hide it: this
 // measures memory *latency*, unlike the streaming `sieve`. Pure 32-bit integer.
-// This compiler doesn't truncate u32 arithmetic to 32 bits, so the wrapping
-// 32-bit math is done in u64 and masked with `& 0xFFFFFFFF` to match the other
-// languages' u32 wraparound.
+// The wrapping 32-bit math is done in u64 and masked with `& 0xFFFFFFFF` so it
+// stays bit-identical with the other languages' u32 wraparound.
 
 bench_ptrchase :: () {
     N :: 16000000;
@@ -370,8 +361,8 @@ bench_hash :: () {
 // --- binary search tree (heap allocation + pointer chasing) -----------------
 // Inserts M keys into a BST (one heap allocation per node, branchy descent),
 // then runs Q lookups. Measures allocator/GC throughput plus pointer-chasing
-// reads. Keys stay below 2^31 so the signed comparison this compiler emits
-// still matches an unsigned ordering (same trick as `sort`).
+// reads. Keys stay below 2^31 (masked with `& 0x7FFFFFFF`, same trick as
+// `sort`) so every language compares them in the same order.
 
 BstNode :: struct {
     key: u64;
@@ -540,9 +531,6 @@ bench_collatz :: () {
     total: u64 = 0;
     i: u64 = 1;
     while i <= N {
-        // Values stay below 2^32 here, so the high bit is never set: this
-        // compiler's signed `/` and arithmetic `>>` behave identically to the
-        // unsigned forms, and no warmup/masking workaround is needed.
         n: u64 = i;
         steps: u64 = 0;
         while n != 1 {
