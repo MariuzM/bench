@@ -534,17 +534,382 @@ static void bench_collatz(void) {
     printf("checksum %llu\n", (unsigned long long)total);
 }
 
+// --- n-body (dependent floating-point chains) -------------------------------
+// All-pairs gravitational n-body. Each interaction needs 1/dist^3, so it leans
+// on a hand-rolled Newton-iteration sqrt (8 fixed iterations from g0=(d2+1)/2,
+// which is >= sqrt(d2) by AM-GM, so it converges monotonically). Only +,-,*,/
+// so every language is bit-identical; the dependent Newton chain stresses FP
+// latency, unlike mandelbrot/raster which are FP throughput.
+
+static void bench_nbody(void) {
+    const int N = 2048;
+    const int STEPS = 8;
+    const double DT = 0.01;
+    const double EPS = 0.05;
+    double *px = malloc(N * sizeof(double)), *py = malloc(N * sizeof(double)), *pz = malloc(N * sizeof(double));
+    double *vx = malloc(N * sizeof(double)), *vy = malloc(N * sizeof(double)), *vz = malloc(N * sizeof(double));
+    double *m = malloc(N * sizeof(double));
+    uint32_t s = 7777;
+    for (int i = 0; i < N; i++) {
+        s = s * 1664525u + 1013904223u; px[i] = ((double)(s & 0xFFFFu) / 65536.0) * 2.0 - 1.0;
+        s = s * 1664525u + 1013904223u; py[i] = ((double)(s & 0xFFFFu) / 65536.0) * 2.0 - 1.0;
+        s = s * 1664525u + 1013904223u; pz[i] = ((double)(s & 0xFFFFu) / 65536.0) * 2.0 - 1.0;
+        s = s * 1664525u + 1013904223u; m[i] = (double)(s & 0xFFFFu) / 65536.0 + 0.1;
+        vx[i] = 0.0; vy[i] = 0.0; vz[i] = 0.0;
+    }
+    for (int step = 0; step < STEPS; step++) {
+        for (int i = 0; i < N; i++) {
+            double ax = 0.0, ay = 0.0, az = 0.0;
+            double xi = px[i], yi = py[i], zi = pz[i];
+            for (int j = 0; j < N; j++) {
+                if (j == i) continue;
+                double dx = px[j] - xi, dy = py[j] - yi, dz = pz[j] - zi;
+                double d2 = dx * dx + dy * dy + dz * dz + EPS;
+                double g = (d2 + 1.0) * 0.5;
+                for (int k = 0; k < 8; k++) g = (g + d2 / g) * 0.5;
+                double inv3 = 1.0 / (d2 * g);
+                double f = m[j] * inv3;
+                ax += dx * f; ay += dy * f; az += dz * f;
+            }
+            vx[i] += ax * DT; vy[i] += ay * DT; vz[i] += az * DT;
+        }
+        for (int i = 0; i < N; i++) { px[i] += vx[i] * DT; py[i] += vy[i] * DT; pz[i] += vz[i] * DT; }
+    }
+    uint32_t cs = 0;
+    for (int i = 0; i < N; i++) {
+        cs = cs * 1000003u + (uint32_t)(int64_t)(px[i] * 1024.0);
+        cs = cs * 1000003u + (uint32_t)(int64_t)(py[i] * 1024.0);
+        cs = cs * 1000003u + (uint32_t)(int64_t)(pz[i] * 1024.0);
+    }
+    printf("checksum %u\n", cs);
+    free(px); free(py); free(pz); free(vx); free(vy); free(vz); free(m);
+}
+
+// --- STREAM triad (memory write bandwidth) ----------------------------------
+// a[i] = b[i] + k*c[i] over big arrays, repeated. Complements sieve (streaming
+// reads) and ptrchase (latency) by stressing sustained writes. 32-bit wrapping.
+
+static void bench_stream(void) {
+    const size_t N = 16000000;
+    const int R = 40;
+    const uint32_t K = 3u;
+    uint32_t *a = malloc(N * sizeof(uint32_t)), *b = malloc(N * sizeof(uint32_t)), *c = malloc(N * sizeof(uint32_t));
+    uint32_t x = 11111;
+    for (size_t i = 0; i < N; i++) {
+        x = x * 1664525u + 1013904223u; b[i] = x;
+        x = x * 1664525u + 1013904223u; c[i] = x;
+        a[i] = 0;
+    }
+    for (int r = 0; r < R; r++)
+        for (size_t i = 0; i < N; i++) a[i] = b[i] + K * c[i];
+    uint32_t cs = 0;
+    for (size_t i = 0; i < N; i++) cs = cs * 1000003u + a[i];
+    printf("checksum %u\n", cs);
+    free(a); free(b); free(c);
+}
+
+// --- N-queens (backtracking recursion) --------------------------------------
+// Counts solutions to the N-queens problem with the classic bitmask solver.
+// Combines deep recursion (like fib) with unpredictable pruning branches (like
+// collatz). Pure integer; checksum is the solution count.
+
+static uint64_t nq_solve(uint32_t cols, uint32_t d1, uint32_t d2, uint32_t full) {
+    if (cols == full) return 1;
+    uint64_t count = 0;
+    uint32_t avail = (~(cols | d1 | d2)) & full;
+    while (avail != 0) {
+        uint32_t bit = avail & (0u - avail);
+        avail -= bit;
+        count += nq_solve(cols | bit, ((d1 | bit) * 2u) & full, (d2 | bit) / 2u, full);
+    }
+    return count;
+}
+
+static void bench_nqueens(void) {
+    const int NQ = 14;
+    uint32_t full = (1u << NQ) - 1u;
+    uint64_t total = nq_solve(0, 0, 0, full);
+    printf("checksum %llu\n", (unsigned long long)total);
+}
+
+// --- Conway's Game of Life (2D stencil + branches) --------------------------
+// Steps a toroidal WxH grid through T generations, summing 8 wrapped neighbours
+// per cell. A stencil/neighbour memory pattern none of the other benchmarks
+// cover. Integer grid -> bit-identical.
+
+static void bench_life(void) {
+    const int W = 1024, H = 1024, T = 300;
+    uint8_t *cur = malloc((size_t)W * H), *nxt = malloc((size_t)W * H);
+    uint32_t x = 22221;
+    for (int i = 0; i < W * H; i++) {
+        x = x * 1664525u + 1013904223u;
+        cur[i] = (uint8_t)((x / 65536u) & 1u);
+    }
+    for (int gen = 0; gen < T; gen++) {
+        for (int y = 0; y < H; y++) {
+            int ym = y == 0 ? H - 1 : y - 1;
+            int yp = y == H - 1 ? 0 : y + 1;
+            for (int xx = 0; xx < W; xx++) {
+                int xm = xx == 0 ? W - 1 : xx - 1;
+                int xp = xx == W - 1 ? 0 : xx + 1;
+                int n = cur[ym * W + xm] + cur[ym * W + xx] + cur[ym * W + xp]
+                      + cur[y * W + xm] + cur[y * W + xp]
+                      + cur[yp * W + xm] + cur[yp * W + xx] + cur[yp * W + xp];
+                uint8_t alive = cur[y * W + xx];
+                nxt[y * W + xx] = (n == 3 || (alive && n == 2)) ? 1 : 0;
+            }
+        }
+        uint8_t *tmp = cur; cur = nxt; nxt = tmp;
+    }
+    uint32_t cs = 0;
+    for (int i = 0; i < W * H; i++) cs = cs * 1000003u + cur[i];
+    printf("checksum %u\n", cs);
+    free(cur); free(nxt);
+}
+
+// --- open-addressing hash map (linear probing) ------------------------------
+// Inserts M keys into a power-of-two table with linear probing (summing values
+// on duplicate keys), then runs Q lookups. Exercises the probe-sequence access
+// pattern real hash maps use, distinct from bst's pointer chasing.
+
+static void bench_hashmap(void) {
+    const size_t M = 8000000, Q = 16000000;
+    const uint32_t SIZE = 1u << 24;
+    const uint32_t MASK = SIZE - 1u;
+    uint32_t *keys = calloc(SIZE, sizeof(uint32_t));
+    uint32_t *vals = calloc(SIZE, sizeof(uint32_t));
+    uint32_t x = 33331;
+    for (size_t n = 0; n < M; n++) {
+        x = x * 1664525u + 1013904223u;
+        uint32_t key = (x & 0x7FFFFFFFu) | 1u;
+        uint32_t idx = key & MASK;
+        for (;;) {
+            if (keys[idx] == 0) { keys[idx] = key; vals[idx] = x; break; }
+            if (keys[idx] == key) { vals[idx] += x; break; }
+            idx = (idx + 1u) & MASK;
+        }
+    }
+    uint32_t y = 99989, acc = 0;
+    for (size_t q = 0; q < Q; q++) {
+        y = y * 1664525u + 1013904223u;
+        uint32_t key = (y & 0x7FFFFFFFu) | 1u;
+        uint32_t idx = key & MASK;
+        uint32_t steps = 0;
+        for (;;) {
+            steps += 1;
+            if (keys[idx] == 0) break;
+            if (keys[idx] == key) { acc += vals[idx]; break; }
+            idx = (idx + 1u) & MASK;
+        }
+        acc = acc * 1000003u + steps;
+    }
+    printf("checksum %u\n", acc);
+    free(keys); free(vals);
+}
+
+// --- SHA-256 (32-bit crypto mixing) -----------------------------------------
+// Hashes a byte buffer in 64-byte blocks with the full SHA-256 compression.
+// Heavy 32-bit rotate/shift/xor/add ALU work; bit-identical by spec. A "real"
+// hash next to FNV (hash) and CRC32 (crc32).
+
+static const uint32_t SHA_K[64] = {
+    0x428a2f98u,0x71374491u,0xb5c0fbcfu,0xe9b5dba5u,0x3956c25bu,0x59f111f1u,0x923f82a4u,0xab1c5ed5u,
+    0xd807aa98u,0x12835b01u,0x243185beu,0x550c7dc3u,0x72be5d74u,0x80deb1feu,0x9bdc06a7u,0xc19bf174u,
+    0xe49b69c1u,0xefbe4786u,0x0fc19dc6u,0x240ca1ccu,0x2de92c6fu,0x4a7484aau,0x5cb0a9dcu,0x76f988dau,
+    0x983e5152u,0xa831c66du,0xb00327c8u,0xbf597fc7u,0xc6e00bf3u,0xd5a79147u,0x06ca6351u,0x14292967u,
+    0x27b70a85u,0x2e1b2138u,0x4d2c6dfcu,0x53380d13u,0x650a7354u,0x766a0abbu,0x81c2c92eu,0x92722c85u,
+    0xa2bfe8a1u,0xa81a664bu,0xc24b8b70u,0xc76c51a3u,0xd192e819u,0xd6990624u,0xf40e3585u,0x106aa070u,
+    0x19a4c116u,0x1e376c08u,0x2748774cu,0x34b0bcb5u,0x391c0cb3u,0x4ed8aa4au,0x5b9cca4fu,0x682e6ff3u,
+    0x748f82eeu,0x78a5636fu,0x84c87814u,0x8cc70208u,0x90befffau,0xa4506cebu,0xbef9a3f7u,0xc67178f2u };
+
+static uint32_t rotr32(uint32_t x, int n) { return (x >> n) | (x << (32 - n)); }
+
+static void bench_sha256(void) {
+    const size_t N = 4000000;
+    const int R = 16;
+    uint8_t *buf = malloc(N);
+    uint32_t x = 44441;
+    for (size_t i = 0; i < N; i++) {
+        x = x * 1664525u + 1013904223u;
+        buf[i] = (uint8_t)((x / 256u) & 0xFFu);
+    }
+    uint32_t cs = 0;
+    for (int r = 0; r < R; r++) {
+        uint32_t h0 = 0x6a09e667u, h1 = 0xbb67ae85u, h2 = 0x3c6ef372u, h3 = 0xa54ff53au;
+        uint32_t h4 = 0x510e527fu, h5 = 0x9b05688cu, h6 = 0x1f83d9abu, h7 = 0x5be0cd19u;
+        size_t nblocks = N / 64;
+        uint32_t w[64];
+        for (size_t blk = 0; blk < nblocks; blk++) {
+            size_t base = blk * 64;
+            for (int t = 0; t < 16; t++) {
+                size_t o = base + (size_t)t * 4;
+                w[t] = ((uint32_t)buf[o] << 24) | ((uint32_t)buf[o + 1] << 16) | ((uint32_t)buf[o + 2] << 8) | (uint32_t)buf[o + 3];
+            }
+            for (int t = 16; t < 64; t++) {
+                uint32_t s0 = rotr32(w[t - 15], 7) ^ rotr32(w[t - 15], 18) ^ (w[t - 15] >> 3);
+                uint32_t s1 = rotr32(w[t - 2], 17) ^ rotr32(w[t - 2], 19) ^ (w[t - 2] >> 10);
+                w[t] = w[t - 16] + s0 + w[t - 7] + s1;
+            }
+            uint32_t a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, hh = h7;
+            for (int t = 0; t < 64; t++) {
+                uint32_t S1 = rotr32(e, 6) ^ rotr32(e, 11) ^ rotr32(e, 25);
+                uint32_t ch = (e & f) ^ ((~e) & g);
+                uint32_t t1 = hh + S1 + ch + SHA_K[t] + w[t];
+                uint32_t S0 = rotr32(a, 2) ^ rotr32(a, 13) ^ rotr32(a, 22);
+                uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
+                uint32_t t2 = S0 + maj;
+                hh = g; g = f; f = e; e = d + t1; d = c; c = b; b = a; a = t1 + t2;
+            }
+            h0 += a; h1 += b; h2 += c; h3 += d; h4 += e; h5 += f; h6 += g; h7 += hh;
+        }
+        cs = cs * 1000003u + (h0 ^ h1 ^ h2 ^ h3 ^ h4 ^ h5 ^ h6 ^ h7);
+    }
+    printf("checksum %u\n", cs);
+    free(buf);
+}
+
+// --- matrix transpose (cache stride / TLB) ----------------------------------
+// Naive out-of-place transpose of a big NxN matrix, repeated with src/dst
+// swapped. The column-strided writes thrash cache and TLB, complementing
+// matmul's dense compute. 32-bit folded in linear order so layout matters.
+
+static void bench_transpose(void) {
+    const size_t Ndim = 4096;
+    const int R = 6;
+    uint32_t *src = malloc(Ndim * Ndim * sizeof(uint32_t));
+    uint32_t *dst = malloc(Ndim * Ndim * sizeof(uint32_t));
+    uint32_t x = 55551;
+    for (size_t i = 0; i < Ndim * Ndim; i++) {
+        x = x * 1664525u + 1013904223u; src[i] = x;
+    }
+    for (int r = 0; r < R; r++) {
+        for (size_t i = 0; i < Ndim; i++)
+            for (size_t j = 0; j < Ndim; j++)
+                dst[j * Ndim + i] = src[i * Ndim + j];
+        uint32_t *tmp = src; src = dst; dst = tmp;
+    }
+    uint32_t cs = 0;
+    for (size_t i = 0; i < Ndim * Ndim; i++) cs = cs * 1000003u + src[i];
+    printf("checksum %u\n", cs);
+    free(src); free(dst);
+}
+
+// --- edit distance (dynamic programming) ------------------------------------
+// Levenshtein distance between two pseudo-random small-alphabet strings via the
+// classic two-row DP. A data-dependent min-of-three table fill; no other
+// benchmark exercises 2D dynamic programming. Checksum is the distance.
+
+static int edit_min3(int a, int b, int c) {
+    int m = a < b ? a : b;
+    return m < c ? m : c;
+}
+
+static void bench_editdist(void) {
+    const int LA = 16000, LB = 16000;
+    uint8_t *A = malloc(LA), *B = malloc(LB);
+    uint32_t x = 66661;
+    for (int i = 0; i < LA; i++) { x = x * 1664525u + 1013904223u; A[i] = (uint8_t)((x / 65536u) % 4u); }
+    for (int i = 0; i < LB; i++) { x = x * 1664525u + 1013904223u; B[i] = (uint8_t)((x / 65536u) % 4u); }
+    int *prev = malloc((LB + 1) * sizeof(int));
+    int *cur = malloc((LB + 1) * sizeof(int));
+    for (int j = 0; j <= LB; j++) prev[j] = j;
+    for (int i = 1; i <= LA; i++) {
+        cur[0] = i;
+        for (int j = 1; j <= LB; j++) {
+            int cost = A[i - 1] == B[j - 1] ? 0 : 1;
+            cur[j] = edit_min3(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+        }
+        int *tmp = prev; prev = cur; cur = tmp;
+    }
+    printf("checksum %u\n", (uint32_t)prev[LB]);
+    free(A); free(B); free(prev); free(cur);
+}
+
+// --- LZ77 greedy compressor (branchy match search) --------------------------
+// Greedily matches each position against a sliding window, emitting (offset,
+// length) tokens or literals folded into an FNV hash. The nested longest-match
+// scan is branchy and memory-bound, a heavier cousin of rle.
+
+static void bench_lz(void) {
+    const size_t N = 4000000;
+    const size_t WIN = 512;
+    const size_t MAXLEN = 64;
+    uint8_t *buf = malloc(N);
+    uint32_t x = 77771;
+    for (size_t i = 0; i < N; i++) {
+        x = x * 1664525u + 1013904223u;
+        buf[i] = (uint8_t)((x / 65536u) % 8u);
+    }
+    uint32_t h = 2166136261u;
+    size_t p = 0;
+    while (p < N) {
+        size_t lo = p > WIN ? p - WIN : 0;
+        size_t bestlen = 0, bestoff = 0;
+        for (size_t sidx = lo; sidx < p; sidx++) {
+            size_t len = 0;
+            while (p + len < N && len < MAXLEN && buf[sidx + len] == buf[p + len]) len++;
+            if (len > bestlen) { bestlen = len; bestoff = p - sidx; }
+        }
+        if (bestlen >= 3) {
+            h ^= (uint8_t)(bestoff & 0xFFu); h *= 16777619u;
+            h ^= (uint8_t)((bestoff / 256u) & 0xFFu); h *= 16777619u;
+            h ^= (uint8_t)(bestlen & 0xFFu); h *= 16777619u;
+            p += bestlen;
+        } else {
+            h ^= buf[p]; h *= 16777619u;
+            p += 1;
+        }
+    }
+    printf("checksum %u\n", h);
+    free(buf);
+}
+
+// --- CRC32 (table-driven hashing) -------------------------------------------
+// Builds the standard CRC32 table (poly 0xEDB88320) then CRCs a byte buffer
+// several times. Table-lookup gather plus shift/xor, distinct from FNV's pure
+// ALU and SHA's wide mixing.
+
+static void bench_crc32(void) {
+    const size_t N = 16000000;
+    const int R = 8;
+    uint32_t table[256];
+    for (uint32_t i = 0; i < 256; i++) {
+        uint32_t c = i;
+        for (int k = 0; k < 8; k++) c = (c & 1u) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
+        table[i] = c;
+    }
+    uint8_t *buf = malloc(N);
+    uint32_t x = 88881;
+    for (size_t i = 0; i < N; i++) {
+        x = x * 1664525u + 1013904223u;
+        buf[i] = (uint8_t)((x / 65536u) & 0xFFu);
+    }
+    uint32_t cs = 0;
+    for (int r = 0; r < R; r++) {
+        uint32_t crc = 0xFFFFFFFFu;
+        for (size_t i = 0; i < N; i++)
+            crc = table[(crc ^ buf[i]) & 0xFFu] ^ (crc >> 8);
+        crc ^= 0xFFFFFFFFu;
+        cs = cs * 1000003u + crc;
+    }
+    printf("checksum %u\n", cs);
+    free(buf);
+}
+
 static const struct { const char *name; void (*fn)(void); } BENCHES[] = {
     {"fib", bench_fib}, {"mandelbrot", bench_mandelbrot}, {"matmul", bench_matmul},
     {"sieve", bench_sieve}, {"sort", bench_sort}, {"collatz", bench_collatz},
     {"raster", bench_raster}, {"ptrchase", bench_ptrchase}, {"hash", bench_hash},
     {"bst", bench_bst}, {"rle", bench_rle}, {"base64", bench_base64},
-    {"dispatch", bench_dispatch},
+    {"dispatch", bench_dispatch}, {"nbody", bench_nbody}, {"stream", bench_stream},
+    {"nqueens", bench_nqueens}, {"life", bench_life}, {"hashmap", bench_hashmap},
+    {"sha256", bench_sha256}, {"transpose", bench_transpose}, {"editdist", bench_editdist},
+    {"lz", bench_lz}, {"crc32", bench_crc32},
 };
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        printf("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster|ptrchase|hash|bst|rle|base64|dispatch>\n");
+        printf("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster|ptrchase|hash|bst|rle|base64|dispatch|nbody|stream|nqueens|life|hashmap|sha256|transpose|editdist|lz|crc32>\n");
         return 0;
     }
     for (size_t i = 0; i < sizeof(BENCHES) / sizeof(BENCHES[0]); i++)

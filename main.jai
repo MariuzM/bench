@@ -544,6 +544,421 @@ bench_collatz :: () {
     print("checksum %\n", total);
 }
 
+// --- n-body (dependent floating-point chains) -------------------------------
+// All-pairs gravitational n-body. Each interaction needs 1/dist^3, so it leans
+// on a hand-rolled Newton-iteration sqrt (8 fixed iterations from g0=(d2+1)/2,
+// which is >= sqrt(d2) by AM-GM, so it converges monotonically). Only +,-,*,/
+// so every language is bit-identical; the dependent Newton chain stresses FP
+// latency, unlike mandelbrot/raster which are FP throughput.
+bench_nbody :: () {
+    N :: 2048;
+    STEPS :: 8;
+    DT : float64 : 0.01;
+    EPS : float64 : 0.05;
+    px := NewArray(N, float64);
+    py := NewArray(N, float64);
+    pz := NewArray(N, float64);
+    vx := NewArray(N, float64);
+    vy := NewArray(N, float64);
+    vz := NewArray(N, float64);
+    m := NewArray(N, float64);
+    s: u64 = 7777;
+    for i: 0..N-1 {
+        s = (s * 1664525 + 1013904223) & 0xFFFFFFFF;
+        px[i] = (cast(float64)(s & 0xFFFF) / 65536.0) * 2.0 - 1.0;
+        s = (s * 1664525 + 1013904223) & 0xFFFFFFFF;
+        py[i] = (cast(float64)(s & 0xFFFF) / 65536.0) * 2.0 - 1.0;
+        s = (s * 1664525 + 1013904223) & 0xFFFFFFFF;
+        pz[i] = (cast(float64)(s & 0xFFFF) / 65536.0) * 2.0 - 1.0;
+        s = (s * 1664525 + 1013904223) & 0xFFFFFFFF;
+        m[i] = cast(float64)(s & 0xFFFF) / 65536.0 + 0.1;
+    }
+    for step: 0..STEPS-1 {
+        for i: 0..N-1 {
+            ax: float64 = 0;
+            ay: float64 = 0;
+            az: float64 = 0;
+            xi := px[i];
+            yi := py[i];
+            zi := pz[i];
+            for j: 0..N-1 {
+                if j == i continue;
+                dx := px[j] - xi;
+                dy := py[j] - yi;
+                dz := pz[j] - zi;
+                d2 := dx * dx + dy * dy + dz * dz + EPS;
+                g := (d2 + 1.0) * 0.5;
+                for k: 0..7  g = (g + d2 / g) * 0.5;
+                inv3 := 1.0 / (d2 * g);
+                f := m[j] * inv3;
+                ax += dx * f;
+                ay += dy * f;
+                az += dz * f;
+            }
+            vx[i] += ax * DT;
+            vy[i] += ay * DT;
+            vz[i] += az * DT;
+        }
+        for i: 0..N-1 {
+            px[i] += vx[i] * DT;
+            py[i] += vy[i] * DT;
+            pz[i] += vz[i] * DT;
+        }
+    }
+    cs: u64 = 0;
+    for i: 0..N-1 {
+        cs = (cs * 1000003 + (cast(u64)(cast(s64)(px[i] * 1024.0)) & 0xFFFFFFFF)) & 0xFFFFFFFF;
+        cs = (cs * 1000003 + (cast(u64)(cast(s64)(py[i] * 1024.0)) & 0xFFFFFFFF)) & 0xFFFFFFFF;
+        cs = (cs * 1000003 + (cast(u64)(cast(s64)(pz[i] * 1024.0)) & 0xFFFFFFFF)) & 0xFFFFFFFF;
+    }
+    print("checksum %\n", cs);
+}
+
+// --- STREAM triad (memory write bandwidth) ----------------------------------
+// a[i] = b[i] + k*c[i] over big arrays, repeated. Complements sieve (streaming
+// reads) and ptrchase (latency) by stressing sustained writes. 32-bit wrapping.
+bench_stream :: () {
+    N :: 16000000;
+    R :: 40;
+    a := NewArray(N, u32);
+    b := NewArray(N, u32);
+    c := NewArray(N, u32);
+    x: u64 = 11111;
+    for i: 0..N-1 {
+        x = (x * 1664525 + 1013904223) & 0xFFFFFFFF;
+        b[i] = cast(u32) x;
+        x = (x * 1664525 + 1013904223) & 0xFFFFFFFF;
+        c[i] = cast(u32) x;
+    }
+    for r: 0..R-1 {
+        for i: 0..N-1  a[i] = cast(u32)((cast(u64)b[i] + 3 * cast(u64)c[i]) & 0xFFFFFFFF);
+    }
+    cs: u64 = 0;
+    for i: 0..N-1  cs = (cs * 1000003 + cast(u64)a[i]) & 0xFFFFFFFF;
+    print("checksum %\n", cs);
+}
+
+// --- N-queens (backtracking recursion) --------------------------------------
+// Counts solutions to the N-queens problem with the classic bitmask solver.
+// Combines deep recursion (like fib) with unpredictable pruning branches (like
+// collatz). Pure integer; checksum is the solution count.
+nq_solve :: (cols: u64, d1: u64, d2: u64, full: u64) -> u64 {
+    if cols == full return 1;
+    count: u64 = 0;
+    avail := (0xFFFFFFFF ^ (cols | d1 | d2)) & full;
+    while avail != 0 {
+        neg := ((0xFFFFFFFF ^ avail) + 1) & 0xFFFFFFFF;
+        bit := avail & neg;
+        avail -= bit;
+        count += nq_solve(cols | bit, ((d1 | bit) * 2) & full, (d2 | bit) / 2, full);
+    }
+    return count;
+}
+
+bench_nqueens :: () {
+    full: u64 = (1 << 14) - 1;
+    total := nq_solve(0, 0, 0, full);
+    print("checksum %\n", total);
+}
+
+// --- Conway's Game of Life (2D stencil + branches) --------------------------
+// Steps a toroidal WxH grid through T generations, summing 8 wrapped neighbours
+// per cell. A stencil/neighbour memory pattern none of the other benchmarks
+// cover. Integer grid -> bit-identical.
+bench_life :: () {
+    W :: 1024;
+    H :: 1024;
+    T :: 300;
+    cur := NewArray(W * H, u8);
+    nxt := NewArray(W * H, u8);
+    x: u64 = 22221;
+    for i: 0..W*H-1 {
+        x = (x * 1664525 + 1013904223) & 0xFFFFFFFF;
+        cur[i] = cast(u8)((x / 65536) & 1);
+    }
+    for gen: 0..T-1 {
+        for y: 0..H-1 {
+            ym := ifx y == 0 then H - 1 else y - 1;
+            yp := ifx y == H - 1 then 0 else y + 1;
+            for cx: 0..W-1 {
+                xm := ifx cx == 0 then W - 1 else cx - 1;
+                xp := ifx cx == W - 1 then 0 else cx + 1;
+                n := cast(int) cur[ym * W + xm] + cast(int) cur[ym * W + cx] + cast(int) cur[ym * W + xp]
+                   + cast(int) cur[y * W + xm] + cast(int) cur[y * W + xp]
+                   + cast(int) cur[yp * W + xm] + cast(int) cur[yp * W + cx] + cast(int) cur[yp * W + xp];
+                alive := cur[y * W + cx];
+                nxt[y * W + cx] = cast(u8)(ifx (n == 3) || (alive == 1 && n == 2) then 1 else 0);
+            }
+        }
+        tmp := cur;
+        cur = nxt;
+        nxt = tmp;
+    }
+    cs: u64 = 0;
+    for i: 0..W*H-1  cs = (cs * 1000003 + cast(u64) cur[i]) & 0xFFFFFFFF;
+    print("checksum %\n", cs);
+}
+
+// --- open-addressing hash map (linear probing) ------------------------------
+// Inserts M keys into a power-of-two table with linear probing (summing values
+// on duplicate keys), then runs Q lookups. Exercises the probe-sequence access
+// pattern real hash maps use, distinct from bst's pointer chasing.
+bench_hashmap :: () {
+    M :: 8000000;
+    Q :: 16000000;
+    SIZE :: 1 << 24;
+    MASK :: SIZE - 1;
+    keys := NewArray(SIZE, u32);
+    vals := NewArray(SIZE, u32);
+    x: u64 = 33331;
+    for n: 0..M-1 {
+        x = (x * 1664525 + 1013904223) & 0xFFFFFFFF;
+        key := (x & 0x7FFFFFFF) | 1;
+        idx := cast(s64)(key & MASK);
+        while true {
+            if keys[idx] == 0 { keys[idx] = cast(u32) key; vals[idx] = cast(u32) x; break; }
+            if keys[idx] == cast(u32) key { vals[idx] = cast(u32)((cast(u64)vals[idx] + x) & 0xFFFFFFFF); break; }
+            idx = (idx + 1) & MASK;
+        }
+    }
+    y: u64 = 99989;
+    acc: u64 = 0;
+    for q: 0..Q-1 {
+        y = (y * 1664525 + 1013904223) & 0xFFFFFFFF;
+        key := (y & 0x7FFFFFFF) | 1;
+        idx := cast(s64)(key & MASK);
+        steps: u64 = 0;
+        while true {
+            steps += 1;
+            if keys[idx] == 0 break;
+            if keys[idx] == cast(u32) key { acc = (acc + cast(u64)vals[idx]) & 0xFFFFFFFF; break; }
+            idx = (idx + 1) & MASK;
+        }
+        acc = (acc * 1000003 + steps) & 0xFFFFFFFF;
+    }
+    print("checksum %\n", acc);
+}
+
+// --- SHA-256 (32-bit crypto mixing) -----------------------------------------
+// Hashes a byte buffer in 64-byte blocks with the full SHA-256 compression.
+// Heavy 32-bit rotate/shift/xor/add ALU work; bit-identical by spec. A "real"
+// hash next to FNV (hash) and CRC32 (crc32).
+rotr32 :: (x: u64, n: u64) -> u64 {
+    return ((x >> n) | (x << (32 - n))) & 0xFFFFFFFF;
+}
+
+bench_sha256 :: () {
+    N :: 4000000;
+    R :: 16;
+    k: [64]u64 = .[
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+    ];
+    buf := NewArray(N, u8);
+    x: u64 = 44441;
+    for i: 0..N-1 {
+        x = (x * 1664525 + 1013904223) & 0xFFFFFFFF;
+        buf[i] = cast(u8)((x / 256) & 0xFF);
+    }
+    cs: u64 = 0;
+    for r: 0..R-1 {
+        h0: u64 = 0x6a09e667;
+        h1: u64 = 0xbb67ae85;
+        h2: u64 = 0x3c6ef372;
+        h3: u64 = 0xa54ff53a;
+        h4: u64 = 0x510e527f;
+        h5: u64 = 0x9b05688c;
+        h6: u64 = 0x1f83d9ab;
+        h7: u64 = 0x5be0cd19;
+        nblocks := N / 64;
+        w: [64]u64;
+        for blk: 0..nblocks-1 {
+            base := blk * 64;
+            for t: 0..15 {
+                o := base + t * 4;
+                w[t] = ((cast(u64) buf[o]) << 24) | ((cast(u64) buf[o + 1]) << 16) | ((cast(u64) buf[o + 2]) << 8) | (cast(u64) buf[o + 3]);
+            }
+            for t: 16..63 {
+                s0 := rotr32(w[t - 15], 7) ^ rotr32(w[t - 15], 18) ^ (w[t - 15] >> 3);
+                s1 := rotr32(w[t - 2], 17) ^ rotr32(w[t - 2], 19) ^ (w[t - 2] >> 10);
+                w[t] = (w[t - 16] + s0 + w[t - 7] + s1) & 0xFFFFFFFF;
+            }
+            a := h0; b := h1; c := h2; d := h3;
+            e := h4; f := h5; g := h6; hh := h7;
+            for t: 0..63 {
+                S1 := rotr32(e, 6) ^ rotr32(e, 11) ^ rotr32(e, 25);
+                ch := (e & f) ^ ((0xFFFFFFFF ^ e) & g);
+                t1 := (hh + S1 + ch + k[t] + w[t]) & 0xFFFFFFFF;
+                S0 := rotr32(a, 2) ^ rotr32(a, 13) ^ rotr32(a, 22);
+                maj := (a & b) ^ (a & c) ^ (b & c);
+                t2 := (S0 + maj) & 0xFFFFFFFF;
+                hh = g;
+                g = f;
+                f = e;
+                e = (d + t1) & 0xFFFFFFFF;
+                d = c;
+                c = b;
+                b = a;
+                a = (t1 + t2) & 0xFFFFFFFF;
+            }
+            h0 = (h0 + a) & 0xFFFFFFFF;
+            h1 = (h1 + b) & 0xFFFFFFFF;
+            h2 = (h2 + c) & 0xFFFFFFFF;
+            h3 = (h3 + d) & 0xFFFFFFFF;
+            h4 = (h4 + e) & 0xFFFFFFFF;
+            h5 = (h5 + f) & 0xFFFFFFFF;
+            h6 = (h6 + g) & 0xFFFFFFFF;
+            h7 = (h7 + hh) & 0xFFFFFFFF;
+        }
+        cs = (cs * 1000003 + (h0 ^ h1 ^ h2 ^ h3 ^ h4 ^ h5 ^ h6 ^ h7)) & 0xFFFFFFFF;
+    }
+    print("checksum %\n", cs);
+}
+
+// --- matrix transpose (cache stride / TLB) ----------------------------------
+// Naive out-of-place transpose of a big NxN matrix, repeated with src/dst
+// swapped. The column-strided writes thrash cache and TLB, complementing
+// matmul's dense compute. 32-bit folded in linear order so layout matters.
+bench_transpose :: () {
+    NDIM :: 4096;
+    R :: 6;
+    src := NewArray(NDIM * NDIM, u32);
+    dst := NewArray(NDIM * NDIM, u32);
+    x: u64 = 55551;
+    for i: 0..NDIM*NDIM-1 {
+        x = (x * 1664525 + 1013904223) & 0xFFFFFFFF;
+        src[i] = cast(u32) x;
+    }
+    for r: 0..R-1 {
+        for i: 0..NDIM-1 {
+            for j: 0..NDIM-1  dst[j * NDIM + i] = src[i * NDIM + j];
+        }
+        tmp := src;
+        src = dst;
+        dst = tmp;
+    }
+    cs: u64 = 0;
+    for i: 0..NDIM*NDIM-1  cs = (cs * 1000003 + cast(u64) src[i]) & 0xFFFFFFFF;
+    print("checksum %\n", cs);
+}
+
+// --- edit distance (dynamic programming) ------------------------------------
+// Levenshtein distance between two pseudo-random small-alphabet strings via the
+// classic two-row DP. A data-dependent min-of-three table fill; no other
+// benchmark exercises 2D dynamic programming. Checksum is the distance.
+edit_min3 :: (a: s64, b: s64, c: s64) -> s64 {
+    m := ifx a < b then a else b;
+    return ifx m < c then m else c;
+}
+
+bench_editdist :: () {
+    LA :: 16000;
+    LB :: 16000;
+    a := NewArray(LA, u8);
+    b := NewArray(LB, u8);
+    prev := NewArray(LB + 1, s64);
+    cur := NewArray(LB + 1, s64);
+    x: u64 = 66661;
+    for i: 0..LA-1 {
+        x = (x * 1664525 + 1013904223) & 0xFFFFFFFF;
+        a[i] = cast(u8)((x / 65536) % 4);
+    }
+    for i: 0..LB-1 {
+        x = (x * 1664525 + 1013904223) & 0xFFFFFFFF;
+        b[i] = cast(u8)((x / 65536) % 4);
+    }
+    for j: 0..LB  prev[j] = cast(s64) j;
+    for i: 1..LA {
+        cur[0] = cast(s64) i;
+        for j: 1..LB {
+            cost: s64 = ifx a[i - 1] == b[j - 1] then 0 else 1;
+            cur[j] = edit_min3(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+        }
+        tmp := prev;
+        prev = cur;
+        cur = tmp;
+    }
+    print("checksum %\n", cast(u64) prev[LB]);
+}
+
+// --- LZ77 greedy compressor (branchy match search) --------------------------
+// Greedily matches each position against a sliding window, emitting (offset,
+// length) tokens or literals folded into an FNV hash. The nested longest-match
+// scan is branchy and memory-bound, a heavier cousin of rle.
+bench_lz :: () {
+    N :: 4000000;
+    WIN :: 512;
+    MAXLEN :: 64;
+    buf := NewArray(N, u8);
+    x: u64 = 77771;
+    for i: 0..N-1 {
+        x = (x * 1664525 + 1013904223) & 0xFFFFFFFF;
+        buf[i] = cast(u8)((x / 65536) % 8);
+    }
+    h: u64 = 2166136261;
+    p := 0;
+    while p < N {
+        lo := ifx p > WIN then p - WIN else 0;
+        bestlen := 0;
+        bestoff := 0;
+        sidx := lo;
+        while sidx < p {
+            ln := 0;
+            while p + ln < N && ln < MAXLEN && buf[sidx + ln] == buf[p + ln]  ln += 1;
+            if ln > bestlen { bestlen = ln; bestoff = p - sidx; }
+            sidx += 1;
+        }
+        if bestlen >= 3 {
+            h = h ^ cast(u64)(bestoff & 0xFF);        h = (h * 16777619) & 0xFFFFFFFF;
+            h = h ^ cast(u64)((bestoff / 256) & 0xFF); h = (h * 16777619) & 0xFFFFFFFF;
+            h = h ^ cast(u64)(bestlen & 0xFF);         h = (h * 16777619) & 0xFFFFFFFF;
+            p += bestlen;
+        } else {
+            h = h ^ cast(u64) buf[p];                  h = (h * 16777619) & 0xFFFFFFFF;
+            p += 1;
+        }
+    }
+    print("checksum %\n", h);
+}
+
+// --- CRC32 (table-driven hashing) -------------------------------------------
+// Builds the standard CRC32 table (poly 0xEDB88320) then CRCs a byte buffer
+// several times. Table-lookup gather plus shift/xor, distinct from FNV's pure
+// ALU and SHA's wide mixing.
+bench_crc32 :: () {
+    N :: 16000000;
+    R :: 8;
+    table: [256]u64;
+    for i: 0..255 {
+        c: u64 = cast(u64) i;
+        for kk: 0..7 {
+            if (c & 1) == 1  c = (0xEDB88320 ^ (c >> 1)) & 0xFFFFFFFF;
+            else             c = c >> 1;
+        }
+        table[i] = c;
+    }
+    buf := NewArray(N, u8);
+    x: u64 = 88881;
+    for i: 0..N-1 {
+        x = (x * 1664525 + 1013904223) & 0xFFFFFFFF;
+        buf[i] = cast(u8)((x / 65536) & 0xFF);
+    }
+    cs: u64 = 0;
+    for r: 0..R-1 {
+        crc: u64 = 0xFFFFFFFF;
+        for i: 0..N-1  crc = table[cast(s64)((crc ^ cast(u64) buf[i]) & 0xFF)] ^ (crc >> 8);
+        crc = crc ^ 0xFFFFFFFF;
+        cs = (cs * 1000003 + crc) & 0xFFFFFFFF;
+    }
+    print("checksum %\n", cs);
+}
+
 streq :: (a: string, b: string) -> bool {
     if a.count != b.count return false;
     for i: 0..a.count-1  if a[i] != b[i] return false;
@@ -553,7 +968,7 @@ streq :: (a: string, b: string) -> bool {
 main :: () {
     args := get_command_line_arguments();
     if args.count < 2 {
-        print("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster>\n");
+        print("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster|ptrchase|hash|bst|rle|base64|dispatch|nbody|stream|nqueens|life|hashmap|sha256|transpose|editdist|lz|crc32>\n");
         return;
     }
     name := args[1];
@@ -570,5 +985,15 @@ main :: () {
     else if streq(name, "rle")         bench_rle();
     else if streq(name, "base64")      bench_base64();
     else if streq(name, "dispatch")    bench_dispatch();
+    else if streq(name, "nbody")       bench_nbody();
+    else if streq(name, "stream")      bench_stream();
+    else if streq(name, "nqueens")     bench_nqueens();
+    else if streq(name, "life")        bench_life();
+    else if streq(name, "hashmap")     bench_hashmap();
+    else if streq(name, "sha256")      bench_sha256();
+    else if streq(name, "transpose")   bench_transpose();
+    else if streq(name, "editdist")    bench_editdist();
+    else if streq(name, "lz")          bench_lz();
+    else if streq(name, "crc32")       bench_crc32();
     else print("unknown benchmark: %\n", name);
 }

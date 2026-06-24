@@ -26,7 +26,7 @@ CC="${CC:-cc}"
 CXX="${CXX:-c++}"
 NODE="${NODE:-node}"
 RUNS="${RUNS:-3}"
-BENCHMARKS=(collatz fib mandelbrot matmul sieve sort raster ptrchase hash bst rle base64 dispatch)
+BENCHMARKS=(collatz fib mandelbrot matmul sieve sort raster ptrchase hash bst rle base64 dispatch nbody stream nqueens life hashmap sha256 transpose editdist lz crc32)
 LANGS=(c cpp jai js odin rust zig)
 # Frames rendered by the `raster` benchmark (must match RASTER_FRAMES in the
 # source files); used to derive frames-per-second from the measured wall time.

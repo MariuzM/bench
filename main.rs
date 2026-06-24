@@ -605,9 +605,477 @@ fn bench_collatz() {
     println!("checksum {}", total);
 }
 
+// --- n-body (dependent floating-point chains) -------------------------------
+// All-pairs gravitational n-body. Each interaction needs 1/dist^3, so it leans
+// on a hand-rolled Newton-iteration sqrt (8 fixed iterations from g0=(d2+1)/2,
+// which is >= sqrt(d2) by AM-GM, so it converges monotonically). Only +,-,*,/
+// so every language is bit-identical; the dependent Newton chain stresses FP
+// latency, unlike mandelbrot/raster which are FP throughput.
+fn bench_nbody() {
+    const N: usize = 2048;
+    const STEPS: usize = 8;
+    const DT: f64 = 0.01;
+    const EPS: f64 = 0.05;
+    let mut px = vec![0.0f64; N];
+    let mut py = vec![0.0f64; N];
+    let mut pz = vec![0.0f64; N];
+    let mut vx = vec![0.0f64; N];
+    let mut vy = vec![0.0f64; N];
+    let mut vz = vec![0.0f64; N];
+    let mut m = vec![0.0f64; N];
+    let mut s: u32 = 7777;
+    for i in 0..N {
+        s = s.wrapping_mul(1664525).wrapping_add(1013904223);
+        px[i] = ((s & 0xFFFF) as f64 / 65536.0) * 2.0 - 1.0;
+        s = s.wrapping_mul(1664525).wrapping_add(1013904223);
+        py[i] = ((s & 0xFFFF) as f64 / 65536.0) * 2.0 - 1.0;
+        s = s.wrapping_mul(1664525).wrapping_add(1013904223);
+        pz[i] = ((s & 0xFFFF) as f64 / 65536.0) * 2.0 - 1.0;
+        s = s.wrapping_mul(1664525).wrapping_add(1013904223);
+        m[i] = (s & 0xFFFF) as f64 / 65536.0 + 0.1;
+    }
+    for _ in 0..STEPS {
+        for i in 0..N {
+            let (mut ax, mut ay, mut az) = (0.0f64, 0.0f64, 0.0f64);
+            let (xi, yi, zi) = (px[i], py[i], pz[i]);
+            for j in 0..N {
+                if j == i {
+                    continue;
+                }
+                let dx = px[j] - xi;
+                let dy = py[j] - yi;
+                let dz = pz[j] - zi;
+                let d2 = dx * dx + dy * dy + dz * dz + EPS;
+                let mut g = (d2 + 1.0) * 0.5;
+                for _ in 0..8 {
+                    g = (g + d2 / g) * 0.5;
+                }
+                let inv3 = 1.0 / (d2 * g);
+                let f = m[j] * inv3;
+                ax += dx * f;
+                ay += dy * f;
+                az += dz * f;
+            }
+            vx[i] += ax * DT;
+            vy[i] += ay * DT;
+            vz[i] += az * DT;
+        }
+        for i in 0..N {
+            px[i] += vx[i] * DT;
+            py[i] += vy[i] * DT;
+            pz[i] += vz[i] * DT;
+        }
+    }
+    let mut cs: u32 = 0;
+    for i in 0..N {
+        cs = cs
+            .wrapping_mul(1000003)
+            .wrapping_add((px[i] * 1024.0) as i64 as u32);
+        cs = cs
+            .wrapping_mul(1000003)
+            .wrapping_add((py[i] * 1024.0) as i64 as u32);
+        cs = cs
+            .wrapping_mul(1000003)
+            .wrapping_add((pz[i] * 1024.0) as i64 as u32);
+    }
+    println!("checksum {}", cs);
+}
+
+// --- STREAM triad (memory write bandwidth) ----------------------------------
+// a[i] = b[i] + k*c[i] over big arrays, repeated. Complements sieve (streaming
+// reads) and ptrchase (latency) by stressing sustained writes. 32-bit wrapping.
+fn bench_stream() {
+    const N: usize = 16000000;
+    const R: usize = 40;
+    const K: u32 = 3;
+    let mut a = vec![0u32; N];
+    let mut b = vec![0u32; N];
+    let mut c = vec![0u32; N];
+    let mut x: u32 = 11111;
+    for i in 0..N {
+        x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+        b[i] = x;
+        x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+        c[i] = x;
+    }
+    for _ in 0..R {
+        for i in 0..N {
+            a[i] = b[i].wrapping_add(K.wrapping_mul(c[i]));
+        }
+    }
+    let mut cs: u32 = 0;
+    for i in 0..N {
+        cs = cs.wrapping_mul(1000003).wrapping_add(a[i]);
+    }
+    println!("checksum {}", cs);
+}
+
+// --- N-queens (backtracking recursion) --------------------------------------
+// Counts solutions to the N-queens problem with the classic bitmask solver.
+// Combines deep recursion (like fib) with unpredictable pruning branches (like
+// collatz). Pure integer; checksum is the solution count.
+fn nq_solve(cols: u32, d1: u32, d2: u32, full: u32) -> u64 {
+    if cols == full {
+        return 1;
+    }
+    let mut count: u64 = 0;
+    let mut avail = !(cols | d1 | d2) & full;
+    while avail != 0 {
+        let bit = avail & avail.wrapping_neg();
+        avail -= bit;
+        count += nq_solve(cols | bit, (d1 | bit).wrapping_mul(2) & full, (d2 | bit) / 2, full);
+    }
+    count
+}
+
+fn bench_nqueens() {
+    const NQ: u32 = 14;
+    let full = (1u32 << NQ) - 1;
+    let total = nq_solve(0, 0, 0, full);
+    println!("checksum {}", total);
+}
+
+// --- Conway's Game of Life (2D stencil + branches) --------------------------
+// Steps a toroidal WxH grid through T generations, summing 8 wrapped neighbours
+// per cell. A stencil/neighbour memory pattern none of the other benchmarks
+// cover. Integer grid -> bit-identical.
+fn bench_life() {
+    const W: usize = 1024;
+    const H: usize = 1024;
+    const T: usize = 300;
+    let mut cur = vec![0u8; W * H];
+    let mut nxt = vec![0u8; W * H];
+    let mut x: u32 = 22221;
+    for i in 0..W * H {
+        x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+        cur[i] = ((x / 65536) & 1) as u8;
+    }
+    for _ in 0..T {
+        for y in 0..H {
+            let ym = if y == 0 { H - 1 } else { y - 1 };
+            let yp = if y == H - 1 { 0 } else { y + 1 };
+            for xx in 0..W {
+                let xm = if xx == 0 { W - 1 } else { xx - 1 };
+                let xp = if xx == W - 1 { 0 } else { xx + 1 };
+                let n = cur[ym * W + xm] as i32
+                    + cur[ym * W + xx] as i32
+                    + cur[ym * W + xp] as i32
+                    + cur[y * W + xm] as i32
+                    + cur[y * W + xp] as i32
+                    + cur[yp * W + xm] as i32
+                    + cur[yp * W + xx] as i32
+                    + cur[yp * W + xp] as i32;
+                let alive = cur[y * W + xx];
+                nxt[y * W + xx] = if n == 3 || (alive == 1 && n == 2) { 1 } else { 0 };
+            }
+        }
+        std::mem::swap(&mut cur, &mut nxt);
+    }
+    let mut cs: u32 = 0;
+    for i in 0..W * H {
+        cs = cs.wrapping_mul(1000003).wrapping_add(cur[i] as u32);
+    }
+    println!("checksum {}", cs);
+}
+
+// --- open-addressing hash map (linear probing) ------------------------------
+// Inserts M keys into a power-of-two table with linear probing (summing values
+// on duplicate keys), then runs Q lookups. Exercises the probe-sequence access
+// pattern real hash maps use, distinct from bst's pointer chasing.
+fn bench_hashmap() {
+    const M: usize = 8000000;
+    const Q: usize = 16000000;
+    const SIZE: u32 = 1 << 24;
+    const MASK: u32 = SIZE - 1;
+    let mut keys = vec![0u32; SIZE as usize];
+    let mut vals = vec![0u32; SIZE as usize];
+    let mut x: u32 = 33331;
+    for _ in 0..M {
+        x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+        let key = (x & 0x7FFFFFFF) | 1;
+        let mut idx = key & MASK;
+        loop {
+            if keys[idx as usize] == 0 {
+                keys[idx as usize] = key;
+                vals[idx as usize] = x;
+                break;
+            }
+            if keys[idx as usize] == key {
+                vals[idx as usize] = vals[idx as usize].wrapping_add(x);
+                break;
+            }
+            idx = (idx + 1) & MASK;
+        }
+    }
+    let mut y: u32 = 99989;
+    let mut acc: u32 = 0;
+    for _ in 0..Q {
+        y = y.wrapping_mul(1664525).wrapping_add(1013904223);
+        let key = (y & 0x7FFFFFFF) | 1;
+        let mut idx = key & MASK;
+        let mut steps: u32 = 0;
+        loop {
+            steps += 1;
+            if keys[idx as usize] == 0 {
+                break;
+            }
+            if keys[idx as usize] == key {
+                acc = acc.wrapping_add(vals[idx as usize]);
+                break;
+            }
+            idx = (idx + 1) & MASK;
+        }
+        acc = acc.wrapping_mul(1000003).wrapping_add(steps);
+    }
+    println!("checksum {}", acc);
+}
+
+// --- SHA-256 (32-bit crypto mixing) -----------------------------------------
+// Hashes a byte buffer in 64-byte blocks with the full SHA-256 compression.
+// Heavy 32-bit rotate/shift/xor/add ALU work; bit-identical by spec. A "real"
+// hash next to FNV (hash) and CRC32 (crc32).
+const SHA_K: [u32; 64] = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+];
+
+fn bench_sha256() {
+    const N: usize = 4000000;
+    const R: usize = 16;
+    let mut buf = vec![0u8; N];
+    let mut x: u32 = 44441;
+    for i in 0..N {
+        x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+        buf[i] = ((x / 256) & 0xFF) as u8;
+    }
+    let mut cs: u32 = 0;
+    for _ in 0..R {
+        let mut h0: u32 = 0x6a09e667;
+        let mut h1: u32 = 0xbb67ae85;
+        let mut h2: u32 = 0x3c6ef372;
+        let mut h3: u32 = 0xa54ff53a;
+        let mut h4: u32 = 0x510e527f;
+        let mut h5: u32 = 0x9b05688c;
+        let mut h6: u32 = 0x1f83d9ab;
+        let mut h7: u32 = 0x5be0cd19;
+        let nblocks = N / 64;
+        let mut w = [0u32; 64];
+        for blk in 0..nblocks {
+            let base = blk * 64;
+            for t in 0..16 {
+                let o = base + t * 4;
+                w[t] = (buf[o] as u32) << 24
+                    | (buf[o + 1] as u32) << 16
+                    | (buf[o + 2] as u32) << 8
+                    | (buf[o + 3] as u32);
+            }
+            for t in 16..64 {
+                let s0 = w[t - 15].rotate_right(7) ^ w[t - 15].rotate_right(18) ^ (w[t - 15] >> 3);
+                let s1 = w[t - 2].rotate_right(17) ^ w[t - 2].rotate_right(19) ^ (w[t - 2] >> 10);
+                w[t] = w[t - 16]
+                    .wrapping_add(s0)
+                    .wrapping_add(w[t - 7])
+                    .wrapping_add(s1);
+            }
+            let (mut a, mut b, mut c, mut d) = (h0, h1, h2, h3);
+            let (mut e, mut f, mut g, mut hh) = (h4, h5, h6, h7);
+            for t in 0..64 {
+                let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+                let ch = (e & f) ^ ((!e) & g);
+                let t1 = hh
+                    .wrapping_add(s1)
+                    .wrapping_add(ch)
+                    .wrapping_add(SHA_K[t])
+                    .wrapping_add(w[t]);
+                let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+                let maj = (a & b) ^ (a & c) ^ (b & c);
+                let t2 = s0.wrapping_add(maj);
+                hh = g;
+                g = f;
+                f = e;
+                e = d.wrapping_add(t1);
+                d = c;
+                c = b;
+                b = a;
+                a = t1.wrapping_add(t2);
+            }
+            h0 = h0.wrapping_add(a);
+            h1 = h1.wrapping_add(b);
+            h2 = h2.wrapping_add(c);
+            h3 = h3.wrapping_add(d);
+            h4 = h4.wrapping_add(e);
+            h5 = h5.wrapping_add(f);
+            h6 = h6.wrapping_add(g);
+            h7 = h7.wrapping_add(hh);
+        }
+        cs = cs
+            .wrapping_mul(1000003)
+            .wrapping_add(h0 ^ h1 ^ h2 ^ h3 ^ h4 ^ h5 ^ h6 ^ h7);
+    }
+    println!("checksum {}", cs);
+}
+
+// --- matrix transpose (cache stride / TLB) ----------------------------------
+// Naive out-of-place transpose of a big NxN matrix, repeated with src/dst
+// swapped. The column-strided writes thrash cache and TLB, complementing
+// matmul's dense compute. 32-bit folded in linear order so layout matters.
+fn bench_transpose() {
+    const NDIM: usize = 4096;
+    const R: usize = 6;
+    let mut src = vec![0u32; NDIM * NDIM];
+    let mut dst = vec![0u32; NDIM * NDIM];
+    let mut x: u32 = 55551;
+    for i in 0..NDIM * NDIM {
+        x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+        src[i] = x;
+    }
+    for _ in 0..R {
+        for i in 0..NDIM {
+            for j in 0..NDIM {
+                dst[j * NDIM + i] = src[i * NDIM + j];
+            }
+        }
+        std::mem::swap(&mut src, &mut dst);
+    }
+    let mut cs: u32 = 0;
+    for i in 0..NDIM * NDIM {
+        cs = cs.wrapping_mul(1000003).wrapping_add(src[i]);
+    }
+    println!("checksum {}", cs);
+}
+
+// --- edit distance (dynamic programming) ------------------------------------
+// Levenshtein distance between two pseudo-random small-alphabet strings via the
+// classic two-row DP. A data-dependent min-of-three table fill; no other
+// benchmark exercises 2D dynamic programming. Checksum is the distance.
+fn edit_min3(a: i32, b: i32, c: i32) -> i32 {
+    let m = if a < b { a } else { b };
+    if m < c {
+        m
+    } else {
+        c
+    }
+}
+
+fn bench_editdist() {
+    const LA: usize = 16000;
+    const LB: usize = 16000;
+    let mut a = vec![0u8; LA];
+    let mut b = vec![0u8; LB];
+    let mut x: u32 = 66661;
+    for i in 0..LA {
+        x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+        a[i] = ((x / 65536) % 4) as u8;
+    }
+    for i in 0..LB {
+        x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+        b[i] = ((x / 65536) % 4) as u8;
+    }
+    let mut prev = vec![0i32; LB + 1];
+    let mut cur = vec![0i32; LB + 1];
+    for j in 0..=LB {
+        prev[j] = j as i32;
+    }
+    for i in 1..=LA {
+        cur[0] = i as i32;
+        for j in 1..=LB {
+            let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
+            cur[j] = edit_min3(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+        }
+        std::mem::swap(&mut prev, &mut cur);
+    }
+    println!("checksum {}", prev[LB] as u32);
+}
+
+// --- LZ77 greedy compressor (branchy match search) --------------------------
+// Greedily matches each position against a sliding window, emitting (offset,
+// length) tokens or literals folded into an FNV hash. The nested longest-match
+// scan is branchy and memory-bound, a heavier cousin of rle.
+fn bench_lz() {
+    const N: usize = 4000000;
+    const WIN: usize = 512;
+    const MAXLEN: usize = 64;
+    let mut buf = vec![0u8; N];
+    let mut x: u32 = 77771;
+    for i in 0..N {
+        x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+        buf[i] = ((x / 65536) % 8) as u8;
+    }
+    let mut h: u32 = 2166136261;
+    let mut p = 0usize;
+    while p < N {
+        let lo = if p > WIN { p - WIN } else { 0 };
+        let mut bestlen = 0usize;
+        let mut bestoff = 0usize;
+        for sidx in lo..p {
+            let mut len = 0usize;
+            while p + len < N && len < MAXLEN && buf[sidx + len] == buf[p + len] {
+                len += 1;
+            }
+            if len > bestlen {
+                bestlen = len;
+                bestoff = p - sidx;
+            }
+        }
+        if bestlen >= 3 {
+            h ^= (bestoff & 0xFF) as u32;
+            h = h.wrapping_mul(16777619);
+            h ^= ((bestoff / 256) & 0xFF) as u32;
+            h = h.wrapping_mul(16777619);
+            h ^= (bestlen & 0xFF) as u32;
+            h = h.wrapping_mul(16777619);
+            p += bestlen;
+        } else {
+            h ^= buf[p] as u32;
+            h = h.wrapping_mul(16777619);
+            p += 1;
+        }
+    }
+    println!("checksum {}", h);
+}
+
+// --- CRC32 (table-driven hashing) -------------------------------------------
+// Builds the standard CRC32 table (poly 0xEDB88320) then CRCs a byte buffer
+// several times. Table-lookup gather plus shift/xor, distinct from FNV's pure
+// ALU and SHA's wide mixing.
+fn bench_crc32() {
+    const N: usize = 16000000;
+    const R: usize = 8;
+    let mut table = [0u32; 256];
+    for i in 0..256u32 {
+        let mut c = i;
+        for _ in 0..8 {
+            c = if c & 1 == 1 { 0xEDB88320 ^ (c >> 1) } else { c >> 1 };
+        }
+        table[i as usize] = c;
+    }
+    let mut buf = vec![0u8; N];
+    let mut x: u32 = 88881;
+    for i in 0..N {
+        x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+        buf[i] = ((x / 65536) & 0xFF) as u8;
+    }
+    let mut cs: u32 = 0;
+    for _ in 0..R {
+        let mut crc: u32 = 0xFFFFFFFF;
+        for i in 0..N {
+            crc = table[((crc ^ buf[i] as u32) & 0xFF) as usize] ^ (crc >> 8);
+        }
+        crc ^= 0xFFFFFFFF;
+        cs = cs.wrapping_mul(1000003).wrapping_add(crc);
+    }
+    println!("checksum {}", cs);
+}
+
 fn main() {
     let Some(name) = env::args().nth(1) else {
-        println!("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster|ptrchase|hash|bst|rle|base64|dispatch>");
+        println!("usage: main <fib|mandelbrot|matmul|sieve|sort|collatz|raster|ptrchase|hash|bst|rle|base64|dispatch|nbody|stream|nqueens|life|hashmap|sha256|transpose|editdist|lz|crc32>");
         return;
     };
     match name.as_str() {
@@ -624,6 +1092,16 @@ fn main() {
         "rle" => bench_rle(),
         "base64" => bench_base64(),
         "dispatch" => bench_dispatch(),
+        "nbody" => bench_nbody(),
+        "stream" => bench_stream(),
+        "nqueens" => bench_nqueens(),
+        "life" => bench_life(),
+        "hashmap" => bench_hashmap(),
+        "sha256" => bench_sha256(),
+        "transpose" => bench_transpose(),
+        "editdist" => bench_editdist(),
+        "lz" => bench_lz(),
+        "crc32" => bench_crc32(),
         _ => println!("unknown benchmark: {}", name),
     }
 }

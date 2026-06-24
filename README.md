@@ -2,7 +2,7 @@
 
 A small head-to-head benchmark suite comparing **C**, **C++**, **Jai**,
 **JavaScript** (Node.js), **Odin**, **Rust** and **Zig** on runtime speed, peak
-memory, binary size, compile time and source size. The same thirteen workloads are implemented in
+memory, binary size, compile time and source size. The same twenty-three workloads are implemented in
 each language; a build script compiles the six native suites (and launches the
 JavaScript suite under Node), runs every benchmark under `/usr/bin/time`, and
 prints a side-by-side table.
@@ -15,13 +15,13 @@ right alongside the other LLVM-backed native languages.
 
 | File         | What it is                                                        |
 | ------------ | ----------------------------------------------------------------- |
-| `main.c`     | All thirteen benchmarks; runs one, chosen by a command-line argument.|
-| `main.cpp`   | The same thirteen benchmarks in C++.                                 |
-| `main.jai`   | The same thirteen benchmarks in Jai.                                |
-| `main.js`    | The same thirteen benchmarks in JavaScript (run with Node.js).       |
-| `main.odin`  | The same thirteen benchmarks in Odin.                                |
-| `main.rs`    | The same thirteen benchmarks in Rust.                                |
-| `main.zig`   | The same thirteen benchmarks in Zig.                                 |
+| `main.c`     | All twenty-three benchmarks; runs one, chosen by a command-line argument.|
+| `main.cpp`   | The same twenty-three benchmarks in C++.                             |
+| `main.jai`   | The same twenty-three benchmarks in Jai.                            |
+| `main.js`    | The same twenty-three benchmarks in JavaScript (run with Node.js).   |
+| `main.odin`  | The same twenty-three benchmarks in Odin.                           |
+| `main.rs`    | The same twenty-three benchmarks in Rust.                           |
+| `main.zig`   | The same twenty-three benchmarks in Zig.                            |
 | `bench.sh`   | Builds/launches all seven language builds, times each benchmark, prints the table.|
 
 Each program runs exactly one benchmark per process (`./prog fib`,
@@ -44,6 +44,16 @@ Each program runs exactly one benchmark per process (`./prog fib`,
 | `rle`        | Branchy byte processing: run-length-encodes a buffer of random runs. |
 | `base64`     | Bit manipulation + table lookup: base64-encodes a byte buffer (gather through a 64-entry table). |
 | `dispatch`   | Indirect-branch prediction: applies a stream of ops to an accumulator through a function-pointer table (one indirect call per element). |
+| `nbody`      | Floating-point **latency**: all-pairs gravitational n-body whose per-interaction `1/dist^3` runs a dependent 8-iteration Newton sqrt (only `+ - * /`). Complements `mandelbrot`/`raster`'s FP throughput. |
+| `stream`     | Memory **write** bandwidth: STREAM triad `a[i] = b[i] + k*c[i]` over three 64 MB arrays. Complements `sieve`'s streaming reads and `ptrchase`'s latency. |
+| `nqueens`    | Backtracking recursion: counts solutions to 14-queens with the classic bitmask solver (deep recursion like `fib` plus unpredictable pruning branches like `collatz`). |
+| `life`       | 2D stencil: steps a 1024×1024 toroidal Conway's Game of Life grid 300 generations, summing 8 wrapped neighbours per cell. |
+| `hashmap`    | Open-addressing hash map: 8M inserts + 16M lookups with linear probing. Exercises the probe-sequence access pattern, distinct from `bst`'s pointer chasing. |
+| `sha256`     | Crypto mixing: full SHA-256 compression over a 4 MB buffer ×16. Heavy 32-bit rotate/shift/xor/add ALU work; a "real" hash next to `hash` (FNV) and `crc32`. |
+| `transpose`  | Cache stride / TLB: naive out-of-place transpose of a 4096×4096 matrix, repeated with src/dst swapped (column-strided writes thrash cache). Complements `matmul`. |
+| `editdist`   | Dynamic programming: Levenshtein distance between two 16k-symbol strings via the two-row DP (data-dependent min-of-three table fill). |
+| `lz`         | Branchy match search: greedy LZ77 over a 4 MB buffer with a 512-byte sliding window. A heavier, more memory-bound cousin of `rle`. |
+| `crc32`      | Table-driven hashing: builds the standard CRC32 table (poly `0xEDB88320`) then CRCs a 16 MB buffer ×8 (table-lookup gather + shift/xor). |
 
 Every benchmark prints a `checksum` line. All seven languages must produce the
 **same** checksum — that's how the script proves everyone did identical work
@@ -51,10 +61,13 @@ before comparing their timings. JavaScript uses `BigInt` for the `sort`
 benchmark's 64-bit wrapping arithmetic so it stays bit-identical with the
 native builds. C and C++ are built with `-ffp-contract=off` so the `mandelbrot`
 float math doesn't fuse into FMA (which would diverge from the other backends).
-The six newer benchmarks (`ptrchase`, `hash`, `bst`, `rle`, `base64`,
-`dispatch`) use only 32-bit wrapping integer arithmetic (an LCG built from
-multiply + add, division instead of right-shift), so JavaScript stays
-bit-identical with `Math.imul`/`>>>0` instead of `BigInt`.
+The newer benchmarks (`ptrchase`, `hash`, `bst`, `rle`, `base64`, `dispatch`,
+`stream`, `nqueens`, `life`, `hashmap`, `sha256`, `transpose`, `editdist`, `lz`,
+`crc32`) use only 32-bit wrapping integer arithmetic (an LCG built from
+multiply + add), so JavaScript stays bit-identical with `Math.imul`/`>>>0`
+instead of `BigInt`. `nbody` is floating-point but uses only `+ - * /` and a
+hand-rolled Newton-iteration `sqrt` (no `libm`), so its doubles round identically
+across all seven backends, the same trick `raster` uses.
 
 The `raster` benchmark is a real (if tiny) software 3D renderer with no external
 dependencies — it transforms and projects a UV-sphere mesh, rasterizes triangles
@@ -85,7 +98,11 @@ of code.
 
 ## Results
 
-Best of 3 runs on the [test system](#test-system) below (lower is better).
+Best of 3 runs on the [test system](#test-system) below (lower is better). The
+tables below cover the original thirteen workloads; the ten newer ones (`nbody`,
+`stream`, `nqueens`, `life`, `hashmap`, `sha256`, `transpose`, `editdist`, `lz`,
+`crc32`) are wired into the suite and verified bit-identical across all seven
+languages — run `./bench.sh` to measure them on your own hardware.
 
 ### Wall-clock time (seconds)
 
@@ -231,11 +248,15 @@ below).
 - The `raster` benchmark renders a fixed **240 frames**; its FPS row is just
   `240 / best wall time`. It is self-contained (own polynomial `sin`/`cos`, no
   `sqrt`, only `+ - * /`) so every language renders bit-identical frames.
-- The six newer benchmarks (`ptrchase`, `hash`, `bst`, `rle`, `base64`,
-  `dispatch`) use only **32-bit wrapping** integer arithmetic, so JavaScript
-  stays bit-identical with `Math.imul`/`>>>0` (no `BigInt`). `bst` allocates one
-  node per insert to exercise each language's heap allocator, and `dispatch`
-  calls through a function-pointer table to exercise indirect-branch prediction.
+- Most newer benchmarks (`ptrchase`, `hash`, `bst`, `rle`, `base64`,
+  `dispatch`, `stream`, `nqueens`, `life`, `hashmap`, `sha256`, `transpose`,
+  `editdist`, `lz`, `crc32`) use only **32-bit wrapping** integer arithmetic, so
+  JavaScript stays bit-identical with `Math.imul`/`>>>0` (no `BigInt`). `bst`
+  allocates one node per insert to exercise each language's heap allocator, and
+  `dispatch` calls through a function-pointer table to exercise indirect-branch
+  prediction. `nbody` is the lone floating-point addition here; like `raster` it
+  ships its own polynomial-free Newton `sqrt` and touches only `+ - * /`, so all
+  seven backends agree to the bit.
 
 ## Test system
 
