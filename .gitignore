@@ -5,5 +5,4 @@ main
 main.dSYM/
 *.o
 .DS_Store
-heatmap.html
 results.txt
