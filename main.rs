@@ -346,9 +346,6 @@ fn bench_raster() {
 }
 
 // --- pointer-chasing (random memory latency) --------------------------------
-// Builds one big random permutation cycle, then chases next[p] for many hops.
-// Each load depends on the previous one, so the prefetcher can't hide it: this
-// measures memory *latency*, unlike the streaming `sieve`. Pure 32-bit integer.
 
 fn bench_ptrchase() {
     const N: usize = 16000000;
@@ -376,8 +373,6 @@ fn bench_ptrchase() {
 }
 
 // --- FNV-1a hash ------------------------------------------------------------
-// Hashes a byte buffer several times with 32-bit FNV-1a. Stresses the integer
-// ALU (xor + wrapping multiply) and a tight sequential read; no SIMD to exploit.
 
 fn bench_hash() {
     const N: usize = 32000000;
@@ -398,10 +393,7 @@ fn bench_hash() {
     println!("checksum {}", h);
 }
 
-// --- binary search tree (heap allocation + pointer chasing) -----------------
-// Inserts M keys into a BST (one heap allocation per node, branchy descent),
-// then runs Q lookups. Measures allocator/GC throughput plus pointer-chasing
-// reads. Keys stay below 2^31 so signed/unsigned ordering agree everywhere.
+// --- binary search tree -----------------------------------------------------
 
 struct BstNode {
     key: u32,
@@ -461,9 +453,7 @@ fn bench_bst() {
     println!("checksum {}", cs);
 }
 
-// --- run-length encoding (branchy byte processing) --------------------------
-// Builds a buffer of random runs, then RLE-encodes it several times, folding
-// the (count,value) output into a 32-bit hash. Data-dependent branchy scan.
+// --- run-length encoding ----------------------------------------------------
 
 fn bench_rle() {
     const N: usize = 40000000;
@@ -513,10 +503,7 @@ fn bench_rle() {
     println!("checksum {}", h);
 }
 
-// --- base64 encoding (table lookup + bit shuffling) -------------------------
-// Base64-encodes a byte buffer several times, folding the output characters
-// into a 32-bit hash. Uses division (not >>) so every language agrees bit for
-// bit. Stresses byte-level bit manipulation and a small gather/table lookup.
+// --- base64 encoding --------------------------------------------------------
 
 const B64: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -553,9 +540,6 @@ fn bench_base64() {
 }
 
 // --- indirect dispatch ------------------------------------------------------
-// Applies a stream of ops to an accumulator through a function-pointer table,
-// one indirect call per element. Stresses indirect-branch prediction. All ops
-// are 32-bit wrapping + ^ * - so the result is identical across languages.
 
 fn op_add(a: u32, b: u32) -> u32 {
     a.wrapping_add(b)
@@ -606,11 +590,6 @@ fn bench_collatz() {
 }
 
 // --- n-body (dependent floating-point chains) -------------------------------
-// All-pairs gravitational n-body. Each interaction needs 1/dist^3, so it leans
-// on a hand-rolled Newton-iteration sqrt (8 fixed iterations from g0=(d2+1)/2,
-// which is >= sqrt(d2) by AM-GM, so it converges monotonically). Only +,-,*,/
-// so every language is bit-identical; the dependent Newton chain stresses FP
-// latency, unlike mandelbrot/raster which are FP throughput.
 fn bench_nbody() {
     const N: usize = 2048;
     const STEPS: usize = 8;
@@ -682,8 +661,6 @@ fn bench_nbody() {
 }
 
 // --- STREAM triad (memory write bandwidth) ----------------------------------
-// a[i] = b[i] + k*c[i] over big arrays, repeated. Complements sieve (streaming
-// reads) and ptrchase (latency) by stressing sustained writes. 32-bit wrapping.
 fn bench_stream() {
     const N: usize = 16000000;
     const R: usize = 40;
@@ -711,9 +688,6 @@ fn bench_stream() {
 }
 
 // --- N-queens (backtracking recursion) --------------------------------------
-// Counts solutions to the N-queens problem with the classic bitmask solver.
-// Combines deep recursion (like fib) with unpredictable pruning branches (like
-// collatz). Pure integer; checksum is the solution count.
 fn nq_solve(cols: u32, d1: u32, d2: u32, full: u32) -> u64 {
     if cols == full {
         return 1;
@@ -735,10 +709,7 @@ fn bench_nqueens() {
     println!("checksum {}", total);
 }
 
-// --- Conway's Game of Life (2D stencil + branches) --------------------------
-// Steps a toroidal WxH grid through T generations, summing 8 wrapped neighbours
-// per cell. A stencil/neighbour memory pattern none of the other benchmarks
-// cover. Integer grid -> bit-identical.
+// --- Conway's Game of Life --------------------------------------------------
 fn bench_life() {
     const W: usize = 1024;
     const H: usize = 1024;
@@ -779,9 +750,6 @@ fn bench_life() {
 }
 
 // --- open-addressing hash map (linear probing) ------------------------------
-// Inserts M keys into a power-of-two table with linear probing (summing values
-// on duplicate keys), then runs Q lookups. Exercises the probe-sequence access
-// pattern real hash maps use, distinct from bst's pointer chasing.
 fn bench_hashmap() {
     const M: usize = 8000000;
     const Q: usize = 16000000;
@@ -831,9 +799,6 @@ fn bench_hashmap() {
 }
 
 // --- SHA-256 (32-bit crypto mixing) -----------------------------------------
-// Hashes a byte buffer in 64-byte blocks with the full SHA-256 compression.
-// Heavy 32-bit rotate/shift/xor/add ALU work; bit-identical by spec. A "real"
-// hash next to FNV (hash) and CRC32 (crc32).
 const SHA_K: [u32; 64] = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -922,9 +887,6 @@ fn bench_sha256() {
 }
 
 // --- matrix transpose (cache stride / TLB) ----------------------------------
-// Naive out-of-place transpose of a big NxN matrix, repeated with src/dst
-// swapped. The column-strided writes thrash cache and TLB, complementing
-// matmul's dense compute. 32-bit folded in linear order so layout matters.
 fn bench_transpose() {
     const NDIM: usize = 4096;
     const R: usize = 6;
@@ -951,9 +913,6 @@ fn bench_transpose() {
 }
 
 // --- edit distance (dynamic programming) ------------------------------------
-// Levenshtein distance between two pseudo-random small-alphabet strings via the
-// classic two-row DP. A data-dependent min-of-three table fill; no other
-// benchmark exercises 2D dynamic programming. Checksum is the distance.
 fn edit_min3(a: i32, b: i32, c: i32) -> i32 {
     let m = if a < b { a } else { b };
     if m < c {
@@ -993,10 +952,7 @@ fn bench_editdist() {
     println!("checksum {}", prev[LB] as u32);
 }
 
-// --- LZ77 greedy compressor (branchy match search) --------------------------
-// Greedily matches each position against a sliding window, emitting (offset,
-// length) tokens or literals folded into an FNV hash. The nested longest-match
-// scan is branchy and memory-bound, a heavier cousin of rle.
+// --- LZ77 greedy compressor -------------------------------------------------
 fn bench_lz() {
     const N: usize = 4000000;
     const WIN: usize = 512;
@@ -1041,9 +997,6 @@ fn bench_lz() {
 }
 
 // --- CRC32 (table-driven hashing) -------------------------------------------
-// Builds the standard CRC32 table (poly 0xEDB88320) then CRCs a byte buffer
-// several times. Table-lookup gather plus shift/xor, distinct from FNV's pure
-// ALU and SHA's wide mixing.
 fn bench_crc32() {
     const N: usize = 16000000;
     const R: usize = 8;

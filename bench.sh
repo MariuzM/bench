@@ -9,9 +9,9 @@
 # JavaScript is interpreted/JIT-compiled by Node at run time, so it has no
 # ahead-of-time binary or compile step (shown as "n/a" in those rows).
 #
-# Env overrides: CC, CXX, JAI, ODIN, RUSTC, ZIG (compiler paths), NODE (runtime),
-# RUNS (timed repeats). Written for bash 3.2 (macOS default), so it uses
-# indirect variable references instead of associative arrays.
+# Env overrides: CC, CXX, JAI, ODIN, RUSTC, ZIG, NIM (compiler paths), NODE
+# (runtime), RUNS (timed repeats). Written for bash 3.2 (macOS default), so it
+# uses indirect variable references instead of associative arrays.
 
 set -euo pipefail
 
@@ -22,12 +22,13 @@ ZIG="${ZIG:-zig}"
 JAI="${JAI:-jai}"
 RUSTC="${RUSTC:-rustc}"
 ODIN="${ODIN:-odin}"
+NIM="${NIM:-nim}"
 CC="${CC:-cc}"
 CXX="${CXX:-c++}"
 NODE="${NODE:-node}"
 RUNS="${RUNS:-3}"
 BENCHMARKS=(collatz fib mandelbrot matmul sieve sort raster ptrchase hash bst rle base64 dispatch nbody stream nqueens life hashmap sha256 transpose editdist lz crc32)
-LANGS=(c cpp jai js odin rust zig)
+LANGS=(c cpp jai js nim odin rust zig)
 # Frames rendered by the `raster` benchmark (must match RASTER_FRAMES in the
 # source files); used to derive frames-per-second from the measured wall time.
 RASTER_FRAMES=240
@@ -76,17 +77,18 @@ src_of() {
     cpp) echo "$ROOT/main.cpp" ;;
     jai) echo "$ROOT/main.jai" ;;
     js) echo "$ROOT/main.js" ;;
+    nim) echo "$ROOT/main.nim" ;;
     odin) echo "$ROOT/main.odin" ;;
     rust) echo "$ROOT/main.rs" ;;
     zig) echo "$ROOT/main.zig" ;;
   esac
 }
 
-# Source lines of code: non-blank lines that aren't pure `//` comments. All
-# seven suites use `//` line comments and no block comments, so this is a fair
-# conciseness measure across languages.
+# Source lines of code: non-blank lines that aren't pure line comments. The C
+# family suites use `//` and Nim uses `#`; none use block comments, so this is a
+# fair conciseness measure across languages.
 sloc_of() {
-  grep -vE '^[[:space:]]*//' "$1" | grep -vcE '^[[:space:]]*$'
+  grep -vE '^[[:space:]]*(//|#)' "$1" | grep -vcE '^[[:space:]]*$'
 }
 
 # Echo the language with the smallest value for benchmark $2, reading from the
@@ -106,7 +108,7 @@ min_lang() {
 
 # --- build -----------------------------------------------------------------
 
-echo "Building (C -O3 / C++ -O3 / Jai release / Odin -o:speed / Rust -O / Zig ReleaseFast; JS = Node)..."
+echo "Building (C -O3 / C++ -O3 / Jai release / Nim -d:danger / Odin -o:speed / Rust -O / Zig ReleaseFast; JS = Node)..."
 
 # -ffp-contract=off keeps mandelbrot's float math bit-identical with the other
 # LLVM backends, which don't fuse multiply-add by default.
@@ -138,6 +140,16 @@ BUILD_rust=$(/usr/bin/time -p "$RUSTC" -O "$ROOT/main.rs" \
 BINOF_odin="$BIN/odin_bench"
 BUILD_odin=$(cd "$TMP" && /usr/bin/time -p "$ODIN" build "$ROOT/main.odin" -file \
   -o:speed -out:"$BINOF_odin" 2>&1 | awk '/real/ {print $2; exit}')
+
+# Nim compiles through its C backend; -d:danger drops all runtime checks (bounds,
+# overflow) to match the other release builds, and the same -O3 -march=native
+# -ffp-contract=off is forwarded to the C compiler so the float math agrees.
+# nimcache goes under $TMP so no build artifacts are left in the source tree.
+BINOF_nim="$BIN/nim_bench"
+BUILD_nim=$(/usr/bin/time -p "$NIM" c -d:danger --opt:speed --mm:orc \
+  --passC:"-O3 -march=native -ffp-contract=off" --nimcache:"$TMP/nimcache" \
+  --hints:off --warnings:off -o:"$BINOF_nim" "$ROOT/main.nim" 2>&1 \
+  | awk '/real/ {print $2; exit}')
 
 # JavaScript has no compile step: wrap "node main.js" in a tiny launcher so the
 # generic runner can invoke it like any other benchmark binary.

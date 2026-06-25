@@ -296,9 +296,6 @@ static void bench_raster(void) {
 }
 
 // --- pointer-chasing (random memory latency) --------------------------------
-// Builds one big random permutation cycle, then chases next[p] for many hops.
-// Each load depends on the previous one, so the prefetcher can't hide it: this
-// measures memory *latency*, unlike the streaming `sieve`. Pure 32-bit integer.
 
 static void bench_ptrchase(void) {
     const size_t N = 16000000;
@@ -326,8 +323,6 @@ static void bench_ptrchase(void) {
 }
 
 // --- FNV-1a hash ------------------------------------------------------------
-// Hashes a byte buffer several times with 32-bit FNV-1a. Stresses the integer
-// ALU (xor + wrapping multiply) and a tight sequential read; no SIMD to exploit.
 
 static void bench_hash(void) {
     const size_t N = 32000000;
@@ -349,10 +344,7 @@ static void bench_hash(void) {
     free(buf);
 }
 
-// --- binary search tree (heap allocation + pointer chasing) -----------------
-// Inserts M keys into a BST (one heap allocation per node, branchy descent),
-// then runs Q lookups. Measures allocator/GC throughput plus pointer-chasing
-// reads. Keys stay below 2^31 so signed/unsigned ordering agree everywhere.
+// --- binary search tree -----------------------------------------------------
 
 typedef struct bst_node {
     uint32_t key;
@@ -399,9 +391,7 @@ static void bench_bst(void) {
     printf("checksum %u\n", cs);
 }
 
-// --- run-length encoding (branchy byte processing) --------------------------
-// Builds a buffer of random runs, then RLE-encodes it several times, folding
-// the (count,value) output into a 32-bit hash. Data-dependent branchy scan.
+// --- run-length encoding ----------------------------------------------------
 
 static void bench_rle(void) {
     const size_t N = 40000000;
@@ -446,10 +436,7 @@ static void bench_rle(void) {
     free(out);
 }
 
-// --- base64 encoding (table lookup + bit shuffling) -------------------------
-// Base64-encodes a byte buffer several times, folding the output characters
-// into a 32-bit hash. Uses division (not >>) so every language agrees bit for
-// bit. Stresses byte-level bit manipulation and a small gather/table lookup.
+// --- base64 encoding --------------------------------------------------------
 
 static const char B64[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -488,9 +475,6 @@ static void bench_base64(void) {
 }
 
 // --- indirect dispatch ------------------------------------------------------
-// Applies a stream of ops to an accumulator through a function-pointer table,
-// one indirect call per element. Stresses indirect-branch prediction. All ops
-// are 32-bit wrapping + ^ * - so the result is identical across languages.
 
 static uint32_t op_add(uint32_t a, uint32_t b) { return a + b; }
 static uint32_t op_xor(uint32_t a, uint32_t b) { return a ^ b; }
@@ -535,11 +519,6 @@ static void bench_collatz(void) {
 }
 
 // --- n-body (dependent floating-point chains) -------------------------------
-// All-pairs gravitational n-body. Each interaction needs 1/dist^3, so it leans
-// on a hand-rolled Newton-iteration sqrt (8 fixed iterations from g0=(d2+1)/2,
-// which is >= sqrt(d2) by AM-GM, so it converges monotonically). Only +,-,*,/
-// so every language is bit-identical; the dependent Newton chain stresses FP
-// latency, unlike mandelbrot/raster which are FP throughput.
 
 static void bench_nbody(void) {
     const int N = 2048;
@@ -586,8 +565,6 @@ static void bench_nbody(void) {
 }
 
 // --- STREAM triad (memory write bandwidth) ----------------------------------
-// a[i] = b[i] + k*c[i] over big arrays, repeated. Complements sieve (streaming
-// reads) and ptrchase (latency) by stressing sustained writes. 32-bit wrapping.
 
 static void bench_stream(void) {
     const size_t N = 16000000;
@@ -609,9 +586,6 @@ static void bench_stream(void) {
 }
 
 // --- N-queens (backtracking recursion) --------------------------------------
-// Counts solutions to the N-queens problem with the classic bitmask solver.
-// Combines deep recursion (like fib) with unpredictable pruning branches (like
-// collatz). Pure integer; checksum is the solution count.
 
 static uint64_t nq_solve(uint32_t cols, uint32_t d1, uint32_t d2, uint32_t full) {
     if (cols == full) return 1;
@@ -632,10 +606,7 @@ static void bench_nqueens(void) {
     printf("checksum %llu\n", (unsigned long long)total);
 }
 
-// --- Conway's Game of Life (2D stencil + branches) --------------------------
-// Steps a toroidal WxH grid through T generations, summing 8 wrapped neighbours
-// per cell. A stencil/neighbour memory pattern none of the other benchmarks
-// cover. Integer grid -> bit-identical.
+// --- Conway's Game of Life --------------------------------------------------
 
 static void bench_life(void) {
     const int W = 1024, H = 1024, T = 300;
@@ -668,9 +639,6 @@ static void bench_life(void) {
 }
 
 // --- open-addressing hash map (linear probing) ------------------------------
-// Inserts M keys into a power-of-two table with linear probing (summing values
-// on duplicate keys), then runs Q lookups. Exercises the probe-sequence access
-// pattern real hash maps use, distinct from bst's pointer chasing.
 
 static void bench_hashmap(void) {
     const size_t M = 8000000, Q = 16000000;
@@ -708,9 +676,6 @@ static void bench_hashmap(void) {
 }
 
 // --- SHA-256 (32-bit crypto mixing) -----------------------------------------
-// Hashes a byte buffer in 64-byte blocks with the full SHA-256 compression.
-// Heavy 32-bit rotate/shift/xor/add ALU work; bit-identical by spec. A "real"
-// hash next to FNV (hash) and CRC32 (crc32).
 
 static const uint32_t SHA_K[64] = {
     0x428a2f98u,0x71374491u,0xb5c0fbcfu,0xe9b5dba5u,0x3956c25bu,0x59f111f1u,0x923f82a4u,0xab1c5ed5u,
@@ -769,9 +734,6 @@ static void bench_sha256(void) {
 }
 
 // --- matrix transpose (cache stride / TLB) ----------------------------------
-// Naive out-of-place transpose of a big NxN matrix, repeated with src/dst
-// swapped. The column-strided writes thrash cache and TLB, complementing
-// matmul's dense compute. 32-bit folded in linear order so layout matters.
 
 static void bench_transpose(void) {
     const size_t Ndim = 4096;
@@ -795,9 +757,6 @@ static void bench_transpose(void) {
 }
 
 // --- edit distance (dynamic programming) ------------------------------------
-// Levenshtein distance between two pseudo-random small-alphabet strings via the
-// classic two-row DP. A data-dependent min-of-three table fill; no other
-// benchmark exercises 2D dynamic programming. Checksum is the distance.
 
 static int edit_min3(int a, int b, int c) {
     int m = a < b ? a : b;
@@ -825,10 +784,7 @@ static void bench_editdist(void) {
     free(A); free(B); free(prev); free(cur);
 }
 
-// --- LZ77 greedy compressor (branchy match search) --------------------------
-// Greedily matches each position against a sliding window, emitting (offset,
-// length) tokens or literals folded into an FNV hash. The nested longest-match
-// scan is branchy and memory-bound, a heavier cousin of rle.
+// --- LZ77 greedy compressor -------------------------------------------------
 
 static void bench_lz(void) {
     const size_t N = 4000000;
@@ -865,9 +821,6 @@ static void bench_lz(void) {
 }
 
 // --- CRC32 (table-driven hashing) -------------------------------------------
-// Builds the standard CRC32 table (poly 0xEDB88320) then CRCs a byte buffer
-// several times. Table-lookup gather plus shift/xor, distinct from FNV's pure
-// ALU and SHA's wide mixing.
 
 static void bench_crc32(void) {
     const size_t N = 16000000;

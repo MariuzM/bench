@@ -306,10 +306,6 @@ function benchRaster() {
 }
 
 // --- pointer-chasing (random memory latency) --------------------------------
-// Builds one big random permutation cycle, then chases next[p] for many hops.
-// Each load depends on the previous one, so the prefetcher can't hide it: this
-// measures memory *latency*, unlike the streaming `sieve`. All 32-bit, so it
-// uses Math.imul/>>>0 instead of BigInt and stays bit-identical with native.
 
 function benchPtrchase() {
   const N = 16000000
@@ -336,8 +332,6 @@ function benchPtrchase() {
 }
 
 // --- FNV-1a hash ------------------------------------------------------------
-// Hashes a byte buffer several times with 32-bit FNV-1a. Stresses the integer
-// ALU (xor + wrapping multiply) and a tight sequential read; no SIMD to exploit.
 
 function benchHash() {
   const N = 32000000
@@ -358,10 +352,7 @@ function benchHash() {
   console.log('checksum ' + (h >>> 0))
 }
 
-// --- binary search tree (heap allocation + pointer chasing) -----------------
-// Inserts M keys into a BST (one object allocation per node, branchy descent),
-// then runs Q lookups. Measures allocator/GC throughput plus pointer-chasing
-// reads. Keys stay below 2^31 so signed/unsigned ordering agree everywhere.
+// --- binary search tree -----------------------------------------------------
 
 function benchBst() {
   const M = 1000000
@@ -410,9 +401,7 @@ function benchBst() {
   console.log('checksum ' + (cs >>> 0))
 }
 
-// --- run-length encoding (branchy byte processing) --------------------------
-// Builds a buffer of random runs, then RLE-encodes it several times, folding
-// the (count,value) output into a 32-bit hash. Data-dependent branchy scan.
+// --- run-length encoding ----------------------------------------------------
 
 function benchRle() {
   const N = 40000000
@@ -461,10 +450,7 @@ function benchRle() {
   console.log('checksum ' + (h >>> 0))
 }
 
-// --- base64 encoding (table lookup + bit shuffling) -------------------------
-// Base64-encodes a byte buffer several times, folding the output characters
-// into a 32-bit hash. Uses division (not >>) so every language agrees bit for
-// bit. Stresses byte-level bit manipulation and a small gather/table lookup.
+// --- base64 encoding --------------------------------------------------------
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 
@@ -501,9 +487,6 @@ function benchBase64() {
 }
 
 // --- indirect dispatch ------------------------------------------------------
-// Applies a stream of ops to an accumulator through an array of functions, one
-// indirect call per element. Stresses indirect-branch prediction (megamorphic
-// call sites for V8). All ops are 32-bit wrapping + ^ * - via Math.imul/>>>0.
 
 function benchDispatch() {
   const N = 4000000
@@ -549,11 +532,6 @@ function benchCollatz() {
 }
 
 // --- n-body (dependent floating-point chains) -------------------------------
-// All-pairs gravitational n-body. Each interaction needs 1/dist^3, so it leans
-// on a hand-rolled Newton-iteration sqrt (8 fixed iterations from g0=(d2+1)/2,
-// which is >= sqrt(d2) by AM-GM, so it converges monotonically). Only +,-,*,/
-// so every language is bit-identical; the dependent Newton chain stresses FP
-// latency, unlike mandelbrot/raster which are FP throughput.
 function benchNbody() {
   const N = 2048
   const STEPS = 8
@@ -622,8 +600,6 @@ function benchNbody() {
 }
 
 // --- STREAM triad (memory write bandwidth) ----------------------------------
-// a[i] = b[i] + k*c[i] over big arrays, repeated. Complements sieve (streaming
-// reads) and ptrchase (latency) by stressing sustained writes. 32-bit wrapping.
 function benchStream() {
   const N = 16000000
   const R = 40
@@ -647,9 +623,6 @@ function benchStream() {
 }
 
 // --- N-queens (backtracking recursion) --------------------------------------
-// Counts solutions to the N-queens problem with the classic bitmask solver.
-// Combines deep recursion (like fib) with unpredictable pruning branches (like
-// collatz). Pure integer; checksum is the solution count.
 function nqSolve(cols, d1, d2, full) {
   if (cols === full) return 1
   let count = 0
@@ -669,10 +642,7 @@ function benchNqueens() {
   console.log('checksum ' + total)
 }
 
-// --- Conway's Game of Life (2D stencil + branches) --------------------------
-// Steps a toroidal WxH grid through T generations, summing 8 wrapped neighbours
-// per cell. A stencil/neighbour memory pattern none of the other benchmarks
-// cover. Integer grid -> bit-identical.
+// --- Conway's Game of Life --------------------------------------------------
 function benchLife() {
   const W = 1024
   const H = 1024
@@ -709,9 +679,6 @@ function benchLife() {
 }
 
 // --- open-addressing hash map (linear probing) ------------------------------
-// Inserts M keys into a power-of-two table with linear probing (summing values
-// on duplicate keys), then runs Q lookups. Exercises the probe-sequence access
-// pattern real hash maps use, distinct from bst's pointer chasing.
 function benchHashmap() {
   const M = 8000000
   const Q = 16000000
@@ -759,9 +726,6 @@ function benchHashmap() {
 }
 
 // --- SHA-256 (32-bit crypto mixing) -----------------------------------------
-// Hashes a byte buffer in 64-byte blocks with the full SHA-256 compression.
-// Heavy 32-bit rotate/shift/xor/add ALU work; bit-identical by spec. A "real"
-// hash next to FNV (hash) and CRC32 (crc32).
 const SHA_K = [
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
   0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -848,9 +812,6 @@ function benchSha256() {
 }
 
 // --- matrix transpose (cache stride / TLB) ----------------------------------
-// Naive out-of-place transpose of a big NxN matrix, repeated with src/dst
-// swapped. The column-strided writes thrash cache and TLB, complementing
-// matmul's dense compute. 32-bit folded in linear order so layout matters.
 function benchTranspose() {
   const NDIM = 4096
   const R = 6
@@ -875,9 +836,6 @@ function benchTranspose() {
 }
 
 // --- edit distance (dynamic programming) ------------------------------------
-// Levenshtein distance between two pseudo-random small-alphabet strings via the
-// classic two-row DP. A data-dependent min-of-three table fill; no other
-// benchmark exercises 2D dynamic programming. Checksum is the distance.
 function benchEditdist() {
   const LA = 16000
   const LB = 16000
@@ -912,10 +870,7 @@ function benchEditdist() {
   console.log('checksum ' + (prev[LB] >>> 0))
 }
 
-// --- LZ77 greedy compressor (branchy match search) --------------------------
-// Greedily matches each position against a sliding window, emitting (offset,
-// length) tokens or literals folded into an FNV hash. The nested longest-match
-// scan is branchy and memory-bound, a heavier cousin of rle.
+// --- LZ77 greedy compressor -------------------------------------------------
 function benchLz() {
   const N = 4000000
   const WIN = 512
@@ -958,9 +913,6 @@ function benchLz() {
 }
 
 // --- CRC32 (table-driven hashing) -------------------------------------------
-// Builds the standard CRC32 table (poly 0xEDB88320) then CRCs a byte buffer
-// several times. Table-lookup gather plus shift/xor, distinct from FNV's pure
-// ALU and SHA's wide mixing.
 function benchCrc32() {
   const N = 16000000
   const R = 8
